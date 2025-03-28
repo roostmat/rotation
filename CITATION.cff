@@ -1,0 +1,25 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Two-point meson correlators
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Mattis
+    family-names: Roost
+    email: mattis.roost@student.hu-berlin.de
+identifiers:
+  - type: url
+    value: 'https://github.com/roostmat/rotation'
+abstract: >-
+  This software calculates two-point meson correlators from
+  gauge configurations. It is based on the openQCD-2.4.1
+  software.
+keywords:
+  - Lattice QCD
+  - openQCD
+  - correlator
+license: GPL-3.0
