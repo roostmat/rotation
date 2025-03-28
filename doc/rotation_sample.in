@@ -1,0 +1,74 @@
+[Run name]
+name         lwa1
+output       lwa1_01              # optional
+
+
+[Directories]                     # as in openQCD            
+log_dir      ./log
+cnfg_dir     ./cnfg
+dat_dir      ./dat
+
+[Configurations]                  # as in openQCD ms1q
+first        1
+last         261
+step         1
+
+[Random number generator]         # as in openQCD
+level        0
+seed         42702
+
+[Boundary Terms]
+type 3
+cG 1.0
+cF 1.0
+theta 0.0 0.0 0.0
+
+[Measurements]
+nprop        1                    # number of different quark lines
+npcorr       4                    # number of different correlators
+csw          1.0                  # Dirac operator options
+cF           1.0
+isw	     1
+outlat       1 12 12 12           # size of the lattice that will be printed out
+pos          0                    # positioning of source in outlat (0: edge, 1: center)
+
+################################### For every quark line a Propagator 
+                                  # section, nprop in total
+[Propagator 0]
+kappa        0.1306865            # hopping parameter
+isp          0                    # solver id
+
+################################### For every correlator a Correlator
+                                  # section, ncorr in total
+[Point correlator 0]
+iprop        0 0                  # quark lines
+type         G5 G5                # Dirac structures src snk
+x0           -1                   # source time slice (-1: random)
+
+[Point correlator 1]
+iprop        0 0                  # quark lines
+type         G1 G1                # Dirac structures src snk
+x0           -1                   # source time slice (-1: random)
+
+[Point correlator 2]
+iprop        0 0                  # quark lines
+type         G2 G2                # Dirac structures src snk
+x0           -1                   # source time slice (-1: random)
+
+[Point correlator 3]
+iprop        0 0                  # quark lines
+type         G3 G3                # Dirac structures src snk
+x0           -1                   # source time slice (-1: random)
+
+################################### For every solver id used, one Solver
+                                  # section, as in openQCD 
+[Solver 0]
+solver       CGNE
+nmx          20000
+res          1.0e-10
+istop        0
+
+[Wilson flow]
+integrator   Euler
+eps          0.125
+nstep        1

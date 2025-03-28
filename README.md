@@ -1,2 +1,0 @@
-# main
-my fist repo
