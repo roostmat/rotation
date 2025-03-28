@@ -8,6 +8,5 @@ doc/*~
 build/*.o
 build/*.d
 build/rotation
-build/Makefile
 
 .vscode/
