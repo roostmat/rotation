@@ -50,7 +50,7 @@ RANDOM = ranlux ranlux_common ranlxs ranlxd gauss
 
 RATFCTS = elliptic zolotarev ratfcts
 
-ROTATION = organize parallel_out
+ROTATION = parallel_out
 
 SAP = blk_solv sap_com sap_gcr sap
 
@@ -103,9 +103,8 @@ VPATH = .:$(MDIR)/flags:$(MDIR)/lattice:$(MDIR)/archive:$(MDIR)/linalg:\
 
 
 # additional include directories
-MPI_HOME = /usr/local/openmpi-4.0.5
-INCPATH = /usr/local/openmpi-4.0.5/include ./include ../../openQCD-2.4.1/include 
-
+MPI_HOME = /opt/ohpc/pub/mpi/openmpi5-gnu14/5.0.5
+INCPATH = /opt/ohpc/pub/mpi/openmpi5-gnu14/5.0.5/include ./include ../../openQCD-2.4.1/include
 
 # additional libraries
 
@@ -117,11 +116,10 @@ LIBPATH = $(MPI_HOME)/lib
 # scheduling and optimization options
 
 
-CFLAGS = -std=c89 -pedantic -fstrict-aliasing -fopenmp -Wall \
+CFLAGS = -std=c99 -pedantic -fstrict-aliasing -fopenmp -Wall \
          -Wno-long-long -Wno-format-overflow -Wstrict-prototypes -Werror \
-         -O -mfpmath=sse -mno-avx -DAVX -DFMA3 -DPM 
+         -Wno-maybe-uninitialized -O -mfpmath=sse -mno-avx -DAVX -DFMA3 -DPM
 #-DCGNE_DBG -DFGCR_DBG -DFGCR4VD_DBG -DGCR4V -DDFL_MODES_DBG
-
 
 # debugging flags (add to CFLAGS if needed)
 
@@ -144,7 +142,7 @@ PGMS= $(MAIN) $(MODULES)
 # rule to make dependencies
 
 $(addsuffix .d,$(PGMS)): %.d: %.c Makefile
-	@ $(GCC) -ansi $< -MM $(addprefix -I,$(INCPATH)) -o $@
+	@ $(GCC) $< -MM $(addprefix -I,$(INCPATH)) -o $@
 
 
 # rule to compile source programs
