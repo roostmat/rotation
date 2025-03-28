@@ -5,7 +5,7 @@
   You will need to know the full path to openQCD-2.4.1/modules/
   
 
-* edit the Makefie of the rotation package, which should be in ./build/Makefile
+* edit the Makefile of the rotation package, which should be in ./build/Makefile
   The lines that need adjustment are the following:
   
   MDIR = ../../openQCD-2.4.1/modules
