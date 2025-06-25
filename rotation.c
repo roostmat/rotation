@@ -821,7 +821,7 @@ static void wsize(int *nws,int *nwv,int *nwvd)
  * 
  *   void source_pos(int x0, int *src_coords)
  *      Sets the source coordinates src_coords. The time slice x0 is only used
- *      if bcon=0. In tha case, if x0<0, the source is placed at the center of
+ *      if bcon=0. In that case, if x0<0, the source is placed at the center of
  *      the lattice if pos=1, or at (N0-outlat[0])/2 if pos=0. Otherwise, the
  *      the source is placed at x0. If bcon=3, the source is placed at random.
  * 
@@ -956,7 +956,20 @@ static void point_source(spinor_dble *eta, int *src_coords, int cc)
     }
 }
 
-
+/*******************************************************************************
+ * 
+ *   int choose_cc(int type, int cc, complex_dble *factor)
+ *      For a given point source, the inverse Dirac operator is solved for all
+ *      12 combinations of spin and color indices. The spin-color index is
+ *      represented by a source vector of dimension 12 that is 1 at index cc
+ *      and 0 elsewhere.
+ *      For a given type of Gamma matrix and spin-color index cc, this function
+ *      returns the spin-color index cc that is obtained after the spin-color
+ *      source vector is multiplied by
+ *      gamma_5 * gamma_0 * Gamma * gamma_0
+ *      A possible factor of +-1 or +-i is stored in factor.
+ * 
+ ******************************************************************************/
 static int choose_cc(int type, int cc, complex_dble *factor)
 {
     int spin_in,spin_out=-1,color;
@@ -976,21 +989,21 @@ static int choose_cc(int type, int cc, complex_dble *factor)
             case GAMMA1_TYPE:
                 spin_out=3;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA2_TYPE:
                 spin_out=3;
-                (*factor).re=1.0;
+                (*factor).re=-1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA3_TYPE:
                 spin_out=2;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA5_TYPE:
                 spin_out=0;
-                (*factor).re=1.0;
+                (*factor).re=-1.0;
                 (*factor).im=0.0;
                 break;
             case ONE_TYPE:
@@ -1021,32 +1034,32 @@ static int choose_cc(int type, int cc, complex_dble *factor)
             case GAMMA1GAMMA2_TYPE:
                 spin_out=0;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA1GAMMA3_TYPE:
                 spin_out=1;
-                (*factor).re=-1.0;
+                (*factor).re=1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA1GAMMA5_TYPE:
                 spin_out=3;
                 (*factor).re=0.0;
-                (*factor).im=1.0;
+                (*factor).im=-1.0;
                 break;
             case GAMMA2GAMMA3_TYPE:
                 spin_out=1;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA2GAMMA5_TYPE:
                 spin_out=3;
-                (*factor).re=-1.0;
+                (*factor).re=1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA3GAMMA5_TYPE:
                 spin_out=2;
                 (*factor).re=0.0;
-                (*factor).im=1.0;
+                (*factor).im=-1.0;
                 break;
         }
     }
@@ -1062,21 +1075,21 @@ static int choose_cc(int type, int cc, complex_dble *factor)
             case GAMMA1_TYPE:
                 spin_out=2;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA2_TYPE:
                 spin_out=2;
-                (*factor).re=-1.0;
+                (*factor).re=1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA3_TYPE:
                 spin_out=3;
                 (*factor).re=0.0;
-                (*factor).im=1.0;
+                (*factor).im=-1.0;
                 break;
             case GAMMA5_TYPE:
                 spin_out=1;
-                (*factor).re=1.0;
+                (*factor).re=-1.0;
                 (*factor).im=0.0;
                 break;
             case ONE_TYPE:
@@ -1107,32 +1120,32 @@ static int choose_cc(int type, int cc, complex_dble *factor)
             case GAMMA1GAMMA2_TYPE:
                 spin_out=1;
                 (*factor).re=0.0;
-                (*factor).im=1.0;
+                (*factor).im=-1.0;
                 break;
             case GAMMA1GAMMA3_TYPE:
                 spin_out=0;
-                (*factor).re=1.0;
+                (*factor).re=-1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA1GAMMA5_TYPE:
                 spin_out=2;
                 (*factor).re=0.0;
-                (*factor).im=1.0;
+                (*factor).im=-1.0;
                 break;
             case GAMMA2GAMMA3_TYPE:
                 spin_out=0;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA2GAMMA5_TYPE:
                 spin_out=2;
-                (*factor).re=1.0;
+                (*factor).re=-1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA3GAMMA5_TYPE:
                 spin_out=3;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
         }
     }
@@ -1148,21 +1161,21 @@ static int choose_cc(int type, int cc, complex_dble *factor)
             case GAMMA1_TYPE:
                 spin_out=1;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA2_TYPE:
                 spin_out=1;
-                (*factor).re=1.0;
+                (*factor).re=-1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA3_TYPE:
                 spin_out=0;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA5_TYPE:
                 spin_out=2;
-                (*factor).re=1.0;
+                (*factor).re=-1.0;
                 (*factor).im=0.0;
                 break;
             case ONE_TYPE:
@@ -1193,32 +1206,32 @@ static int choose_cc(int type, int cc, complex_dble *factor)
             case GAMMA1GAMMA2_TYPE:
                 spin_out=2;
                 (*factor).re=0.0;
-                (*factor).im=1.0;
+                (*factor).im=-1.0;
                 break;
             case GAMMA1GAMMA3_TYPE:
                 spin_out=3;
-                (*factor).re=1.0;
+                (*factor).re=-1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA1GAMMA5_TYPE:
                 spin_out=1;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA2GAMMA3_TYPE:
                 spin_out=3;
                 (*factor).re=0.0;
-                (*factor).im=1.0;
+                (*factor).im=-1.0;
                 break;
             case GAMMA2GAMMA5_TYPE:
                 spin_out=1;
-                (*factor).re=1.0;
+                (*factor).re=-1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA3GAMMA5_TYPE:
                 spin_out=0;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
         }
     }
@@ -1234,21 +1247,21 @@ static int choose_cc(int type, int cc, complex_dble *factor)
             case GAMMA1_TYPE:
                 spin_out=0;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA2_TYPE:
                 spin_out=0;
-                (*factor).re=-1.0;
+                (*factor).re=1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA3_TYPE:
                 spin_out=1;
                 (*factor).re=0.0;
-                (*factor).im=1.0;
+                (*factor).im=-1.0;
                 break;
             case GAMMA5_TYPE:
                 spin_out=3;
-                (*factor).re=1.0;
+                (*factor).re=-1.0;
                 (*factor).im=0.0;
                 break;
             case ONE_TYPE:
@@ -1279,32 +1292,32 @@ static int choose_cc(int type, int cc, complex_dble *factor)
             case GAMMA1GAMMA2_TYPE:
                 spin_out=3;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA1GAMMA3_TYPE:
                 spin_out=2;
-                (*factor).re=-1.0;
+                (*factor).re=1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA1GAMMA5_TYPE:
                 spin_out=0;
                 (*factor).re=0.0;
-                (*factor).im=-1.0;
+                (*factor).im=1.0;
                 break;
             case GAMMA2GAMMA3_TYPE:
                 spin_out=2;
                 (*factor).re=0.0;
-                (*factor).im=1.0;
+                (*factor).im=-1.0;
                 break;
             case GAMMA2GAMMA5_TYPE:
                 spin_out=0;
-                (*factor).re=-1.0;
+                (*factor).re=1.0;
                 (*factor).im=0.0;
                 break;
             case GAMMA3GAMMA5_TYPE:
                 spin_out=1;
                 (*factor).re=0.0;
-                (*factor).im=1.0;
+                (*factor).im=-1.0;
                 break;
         }
     }
@@ -1321,13 +1334,13 @@ static int choose_cc(int type, int cc, complex_dble *factor)
 }
 
 
-/* xi = - Gamma^\bar eta */
+/* xi = Gamma * eta */
 static void make_source(spinor_dble *eta, int type, spinor_dble *xi)
 {
     switch (type)
     {
         case GAMMA0_TYPE:
-            assign_msd2sd(VOLUME,eta,xi);
+            assign_sd2sd(VOLUME_TRD,2,eta,xi);
             mulg0_dble(VOLUME,xi);
             break;
         case GAMMA1_TYPE:
@@ -1347,7 +1360,7 @@ static void make_source(spinor_dble *eta, int type, spinor_dble *xi)
             mulg5_dble(VOLUME_TRD,2,xi);
             break;
         case ONE_TYPE:
-            assign_msd2sd(VOLUME,eta,xi);
+            assign_sd2sd(VOLUME_TRD,2,eta,xi);
             break;
         case GAMMA0GAMMA1_TYPE:
             assign_sd2sd(VOLUME_TRD,2,eta,xi);
@@ -1366,27 +1379,27 @@ static void make_source(spinor_dble *eta, int type, spinor_dble *xi)
             mulg0g5_dble(VOLUME,xi);
             break;
         case GAMMA1GAMMA2_TYPE:
-            assign_msd2sd(VOLUME,eta,xi);
+            assign_sd2sd(VOLUME_TRD,2,eta,xi);
             mulg1g2_dble(VOLUME,xi);
             break;
         case GAMMA1GAMMA3_TYPE:
-            assign_msd2sd(VOLUME,eta,xi);
+            assign_sd2sd(VOLUME_TRD,2,eta,xi);
             mulg1g3_dble(VOLUME,xi);
             break;
         case GAMMA1GAMMA5_TYPE:
-            assign_msd2sd(VOLUME,eta,xi);
+            assign_sd2sd(VOLUME_TRD,2,eta,xi);
             mulg1g5_dble(VOLUME,xi);
             break;
         case GAMMA2GAMMA3_TYPE:
-            assign_msd2sd(VOLUME,eta,xi);
+            assign_sd2sd(VOLUME_TRD,2,eta,xi);
             mulg2g3_dble(VOLUME,xi);
             break;
         case GAMMA2GAMMA5_TYPE:
-            assign_msd2sd(VOLUME,eta,xi);
+            assign_sd2sd(VOLUME_TRD,2,eta,xi);
             mulg2g5_dble(VOLUME,xi);
             break;
         case GAMMA3GAMMA5_TYPE:
-            assign_msd2sd(VOLUME,eta,xi);
+            assign_sd2sd(VOLUME_TRD,2,eta,xi);
             mulg3g5_dble(VOLUME,xi);
             break;
         default:
@@ -1515,9 +1528,9 @@ static void point_correlators(void)
                 for (cc=0;cc<12;cc++)
                 {   
                     make_source(solution[12*proplist.uprop_index[ix0][props1[ipcorr]]+cc],
-                                type2[ipcorr],source);
+                                type1[ipcorr],source);
                     make_sink(solution[12*proplist.uprop_index[ix0][props2[ipcorr]]
-                                        +choose_cc(type1[ipcorr],cc,&factor)],sink);
+                                        +choose_cc(type2[ipcorr],cc,&factor)],sink);
                     if ((factor.re == 1.0)&&(factor.im == 0.0))
                     {
                         for (i=0;i<VOLUME;i++)
