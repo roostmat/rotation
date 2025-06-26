@@ -15,8 +15,7 @@
 
 
 
-static int outlat[4]={-1,-1,-1,-1};
-static int my_rank,endian,npcorr=1,pos,bcon,setup=0;
+static int my_rank,endian,setup=0;
 static int int_size=0,complex_double_size=0;
 MPI_Datatype MPI_COMPLEX_DOUBLE;
 
@@ -70,18 +69,13 @@ void lex_global(int *x,int *ip,int *ix)
 
 
 
-void set_up_parallel_out(int *_outlat, int _npcorr, int _pos, int _bcon)
+void set_up_parallel_out(void)
 {
     if (setup==0)
     {
-        int i,err_count;
-        for (i=0;i<4;i++)
-        {
-            outlat[i]=_outlat[i];
-        }
+        int err_count;
         create_MPI_COMPLEX_DOUBLE();
         endian=endianness();
-        npcorr=_npcorr;
         /* Calculate data sizes */
         err_count=MPI_Type_size(MPI_INT,&int_size);
         err_count+=MPI_Type_size(MPI_COMPLEX_DOUBLE,&complex_double_size);
@@ -93,8 +87,6 @@ void set_up_parallel_out(int *_outlat, int _npcorr, int _pos, int _bcon)
                 "Failed to get rank of current process");
         setup=1;
     }
-    pos=_pos;
-    bcon=_bcon;
 }
 
 

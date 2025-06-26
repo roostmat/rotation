@@ -15,7 +15,7 @@
 
 
 
-static int my_rank,npcorr=1,setup=0;
+static int my_rank,setup=0;
 static int int_size=0,complex_double_size=0;
 static complex_dble *corr_copy;
 
@@ -23,11 +23,19 @@ static int *basepoint,*basepoint_shifted,*basepoint_shifted_local;
 
 
 
-void set_up_shift(int _npcorr, int *shift)
+void set_up_shift(int *shift)
 {
     if (setup==0)
     {
-        npcorr=_npcorr;
+        if (npcorr!=0)
+        {
+            1;
+        }
+        else
+        {
+            error(1,1,"set_up_shift",
+            "npcorr has not been set yet.");
+        }
     }
 }
 

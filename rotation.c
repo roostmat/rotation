@@ -85,11 +85,11 @@ static struct
  * x0s: x0 position of the source for each correlator
  * srcs: source coordinates for each correlator
 ***************************************************************************/
-static corr_data data;                      /* data structure for the correlators */
-static int npcorr;                          /* number of point correlators */
-static int outlat[4];                       /* output lattice dimensions */
-static int pos;                             /* positioning of the source insided the output lattice*/
-static int bcon;                            /* boundary conditions of the run */
+static corr_data data;                  /* data structure for the correlators */
+int npcorr=-1;                          /* number of point correlators */
+int outlat[4]={-1,-1,-1,-1};            /* output lattice dimensions */
+int pos=-1;                             /* positioning of the source insided the output lattice*/
+int bcon=-1;                            /* boundary conditions of the run */
 static int my_rank,noexp,endian; /* append,norng; */
 static int first,step,last;
 static int level,seed,nprop;
@@ -1642,7 +1642,7 @@ int main(int argc,char *argv[])
 
     geometry();
     init_rng();
-    set_up_parallel_out(outlat,npcorr,pos,bcon);
+    set_up_parallel_out(outlat,pos,bcon);
 
     make_proplist();
     wsize(&nws,&nwv,&nwvd);

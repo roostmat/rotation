@@ -13,6 +13,12 @@
 #define N3 (NPROC3*L3)
 
 
+extern const int npcorr;
+extern const int outlat[4];
+extern const int pos;
+extern const int bcon;
+
+
 typedef struct
 {
     int size;                        /* outlat[0]*outlat[1]*outlat[2]*outlat[3] */
@@ -28,7 +34,7 @@ extern MPI_Datatype MPI_COMPLEX_DOUBLE;
 extern void create_MPI_COMPLEX_DOUBLE(void);
 extern void free_MPI_COMPLEX_DOUBLE(void);
 extern void lex_global(int *x,int *ip,int *ix);
-extern void set_up_parallel_out(int *_outlat, int _npcorr, int _pos, int _bcon);
+extern void set_up_parallel_out(int *_outlat, int _pos, int _bcon);
 extern void parallel_write(char *filename, corr_data *data, int *srcs);
 
 #endif
