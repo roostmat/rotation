@@ -13,116 +13,225 @@
 #include "rotation.h" /* for lex_to_coords, source_pos */
 #include "utils.h" /* for error, error_root */
 
+#define DIM 4
+#define MAX_NEIGHBORS 16
 
 
-static int my_rank,setup=0;
+
+static int my_rank,local_lattice[DIM]={L0,L1,L2,L3};
 static int int_size=0,complex_double_size=0;
 static complex_dble *corr_copy;
 
-static int neighbor[4],remote_base_process_rank;
-static int local_bases[64],remote_bases[64],base_spans[64];
+static int shift[DIM]={0,0,0,0},neighbor[DIM],shift_setup=0;
+static int receive_bases[MAX_NEIGHBORS*DIM],send_bases[MAX_NEIGHBORS*DIM],base_spans[MAX_NEIGHBORS*DIM];
+static MPI_Datatype receive_types[MAX_NEIGHBORS],send_types[MAX_NEIGHBORS];
 
 
 
-void set_up_shift(int *shift)
+static void calculate_send_receive_structure(void)
 {
-    if (setup==0)
+    int index,t,x,y,z,i;
+    int local_shift[DIM],little_vec[DIM];
+
+    local_shift[0]=safe_mod(shift[0],L0);
+    local_shift[1]=safe_mod(shift[1],L1);
+    local_shift[2]=safe_mod(shift[2],L2);
+    local_shift[3]=safe_mod(shift[3],L3);
+
+    little_vec[0]=L0-1-local_shift[0];
+    little_vec[1]=L1-1-local_shift[1];
+    little_vec[2]=L2-1-local_shift[2];
+    little_vec[3]=L3-1-local_shift[3];
+
+    neighbor[0]=!!local_shift[0];
+    neighbor[1]=!!local_shift[1];
+    neighbor[2]=!!local_shift[2];
+    neighbor[3]=!!local_shift[3];
+
+    for (t=0;t<neighbor[0]+1;t++)
     {
-        int err_count;
-        int i,t,x,y,z,index;
-        int remote_basepoint[4],remote_basepoint_local[4],process_coords[4]; /*What else comes here?*/ 
-        int remote_base_process_coords[4];
-        int little_vec[4],big_vec[4];
-
-        error_root((shift[0]!=0)&&(bcon!=3),1,"set_up_shift [shift.c]",
-            "Shifts in time are only permitted for periodic bc");
-
-        /*** MPI setup ***/
-        create_MPI_COMPLEX_DOUBLE();
-        /* Calculate data sizes */
-        err_count=MPI_Type_size(MPI_INT,&int_size);
-        err_count+=MPI_Type_size(MPI_COMPLEX_DOUBLE,&complex_double_size);
-        error(err_count!=MPI_SUCCESS,1,"parallel_write [parallel_out.c]",
-                "Failed to get size of MPI_INT and MPI_COMPLEX_DOUBLE data types");
-        /* Set my_rank */
-        err_count=MPI_Comm_rank(MPI_COMM_WORLD,&my_rank);
-        error(err_count!=MPI_SUCCESS,err_count,"parallel_write [parallel_out.c]",
-                "Failed to get rank of current process");
-
-        /*** Shift setup ***/
-        /*Calculate the global coords of the base of the sending lattice*/
-        remote_basepoint[0]=safe_mod(cpr[0]*L0-shift[0],N0); 
-        remote_basepoint[1]=safe_mod(cpr[1]*L1-shift[1],N1); 
-        remote_basepoint[2]=safe_mod(cpr[2]*L2-shift[2],N2);
-        remote_basepoint[3]=safe_mod(cpr[3]*L3-shift[3],N3);
-
-        /*Calculate remote base process coords and rank*/
-        remote_base_process_coords[0]=remote_basepoint[0]/L0;
-        remote_base_process_coords[1]=remote_basepoint[1]/L1;
-        remote_base_process_coords[2]=remote_basepoint[2]/L2;
-        remote_base_process_coords[3]=remote_basepoint[3]/L3;
-        remote_base_process_rank=ipr_global(remote_base_process_coords);
-
-        /*Calculate the local coords of the base of the sending lattice*/
-        remote_basepoint_local[0]=remote_basepoint[0]%L0;
-        remote_basepoint_local[1]=remote_basepoint[1]%L1;
-        remote_basepoint_local[2]=remote_basepoint[2]%L2;
-        remote_basepoint_local[3]=remote_basepoint[3]%L3;
-
-        /*Check if neighboring processes are involved in the shift*/
-        neighbor[0]=!!remote_basepoint_local[0];
-        neighbor[1]=!!remote_basepoint_local[1];
-        neighbor[2]=!!remote_basepoint_local[2];
-        neighbor[3]=!!remote_basepoint_local[3];
-
-        /*Calculate little vec and big vec*/
-        little_vec[0]=L0-1-remote_basepoint_local[0];
-        little_vec[1]=L1-1-remote_basepoint_local[1];
-        little_vec[2]=L2-1-remote_basepoint_local[2];
-        little_vec[3]=L3-1-remote_basepoint_local[3];
-        big_vec[0]=safe_mod(remote_basepoint_local[0]-1,L0);
-        big_vec[1]=safe_mod(remote_basepoint_local[1]-1,L1);
-        big_vec[2]=safe_mod(remote_basepoint_local[2]-1,L2);
-        big_vec[3]=safe_mod(remote_basepoint_local[3]-1,L3);
-
-        /*Calculate local bases, remote bases, and base spans*/
-        for (t=0;t<neighbor[0];t++)
+        for (x=0;x<neighbor[1]+1;x++)
         {
-            for (x=0;x<neighbor[1];x++)
+            for (y=0;y<neighbor[2]+1;y++)
             {
-                for (y=0;y<neighbor[2];y++)
+                for (z=0;z<neighbor[3]+1;z++)
                 {
-                    for (z=0;z<neighbor[3];z++)
-                    {
-                        index=4*(z+y*2+x*4+t*8);
+                    index=(z+y*2+x*4+t*8)*DIM;
 
-                        remote_bases[index]=(t==1)?0:remote_basepoint_local[0];
-                        remote_bases[index+1]=(x==1)?0:remote_basepoint_local[1];
-                        remote_bases[index+2]=(y==1)?0:remote_basepoint_local[2];
-                        remote_bases[index+3]=(z==1)?0:remote_basepoint_local[3];
-                        
-                        base_spans[index]=(t==1)?big_vec[0]:little_vec[0];
-                        base_spans[index+1]=(x==1)?big_vec[1]:little_vec[1];
-                        base_spans[index+2]=(y==1)?big_vec[2]: little_vec[2];
-                        base_spans[index+3]=(z==1)?big_vec[3]:little_vec[3];
+                    send_bases[index]=(t==0)?0:little_vec[0]+1;
+                    send_bases[index+1]=(x==0)?0:little_vec[1]+1;
+                    send_bases[index+2]=(y==0)?0:little_vec[2]+1;
+                    send_bases[index+3]=(z==0)?0:little_vec[3]+1;
 
-                        local_bases[index]=(t==1)?base_spans[index]+1:0;
-                        local_bases[index+1]=(x==1)?base_spans[index+1]+1:0;
-                        local_bases[index+2]=(y==1)?base_spans[index+2]+1:0;
-                        local_bases[index+3]=(z==1)?base_spans[index+3]+1:0;
-                    }
+                    base_spans[index]=(t==0)?little_vec[0]:L0-2-little_vec[0];
+                    base_spans[index+1]=(x==0)?little_vec[1]:L1-2-little_vec[1];
+                    base_spans[index+2]=(y==0)?little_vec[2]:L2-2-little_vec[2];
+                    base_spans[index+3]=(z==0)?little_vec[3]:L3-2-little_vec[3];
+
+                    receive_bases[index]=(t==0)?local_shift[0]:0;
+                    receive_bases[index+1]=(x==0)?local_shift[1]:0;
+                    receive_bases[index+2]=(y==0)?local_shift[2]:0;
+                    receive_bases[index+3]=(z==0)?local_shift[3]:0;
                 }
             }
         }
-        setup=1;
     }
 }
 
 
 
-void alloc_corr_copy(void)
+static void create_MPI_types(void) /*CHECK HOW THIS FUNCTION CAN BE COMBINED WITH ipt[]!!!!*/
+{                                  /*USE MPI_Type_create_indexed_block()*/
+    int t,x,y,z,i;
+    int index;
+
+    if (npcorr>1)
+    {
+        MPI_Datatype receive_block,receive_blocks[npcorr],send_block,send_blocks[npcorr];
+        MPI_Aint displacements[npcorr];
+        int block_lengths[npcorr];
+
+        for (i=0;i<npcorr;i++)
+        {
+            displacements[i]=i*VOLUME*sizeof(complex_dble);
+            block_lengths[i]=1;
+        }
+
+        for (t=0;t<neighbor[0]+1;t++)
+        {
+            for (x=0;x<neighbor[1]+1;x++)
+            {
+                for (y=0;y<neighbor[2]+1;y++)
+                {
+                    for (z=0;z<neighbor[3]+1;z++)
+                    {
+                        index=(z+y*2+x*4+t*8);
+
+                        /*Create receive type*/
+                        MPI_Type_create_subarray(DIM,local_lattice,base_spans+(index*DIM),
+                                receive_bases+(index*DIM),MPI_ORDER_FORTRAN,MPI_COMPLEX_DOUBLE,
+                                &receive_block);
+                        MPI_Type_commit(&receive_block);
+
+                        /*Create send type*/
+                        MPI_Type_create_subarray(DIM,local_lattice,base_spans+(index*DIM),
+                                send_bases+(index*DIM),MPI_ORDER_FORTRAN,MPI_COMPLEX_DOUBLE,
+                                &send_block);
+                        MPI_Type_commit(&send_block);
+
+                        for (i=0;i<npcorr;i++)
+                        {
+                            receive_blocks[i]=receive_block;
+                            send_blocks[i]=send_block;
+                        }
+
+                        /*Create super receive and send types*/
+                        MPI_Type_create_struct(npcorr,block_lengths,displacements,
+                                receive_blocks,&receive_types[index]);
+                        MPI_Type_create_struct(npcorr,block_lengths,displacements,
+                                send_blocks,&send_types[index]);
+
+                        /*Commit super receive and send types*/
+                        MPI_Type_commit(&receive_types[index]);
+                        MPI_Type_commit(&send_types[index]);
+                    }
+                }
+            }
+        }
+    }
+    else
+    {
+        for (t=0;t<neighbor[0]+1;t++)
+        {
+            for (x=0;x<neighbor[1]+1;x++)
+            {
+                for (y=0;y<neighbor[2]+1;y++)
+                {
+                    for (z=0;z<neighbor[3]+1;z++)
+                    {
+                        index=(z+y*2+x*4+t*8);
+
+                        /*Create and commit receive types*/
+                        MPI_Type_create_subarray(DIM,local_lattice,base_spans+(index*DIM),
+                                receive_bases+(index*DIM),MPI_ORDER_FORTRAN,MPI_COMPLEX_DOUBLE,
+                                &receive_types[index]);
+                        MPI_Type_commit(&receive_types[index]);
+
+                        /*Create and commit send types*/
+                        MPI_Type_create_subarray(DIM,local_lattice,base_spans+(index*DIM),
+                                send_bases+(index*DIM),MPI_ORDER_FORTRAN,MPI_COMPLEX_DOUBLE,
+                                &send_types[index]);
+                        MPI_Type_commit(&send_types[index]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+static void shift_data(void)
+{
+    int t,x,y,z,index;
+    int receive_rank_coords[DIM],send_rank_coords[DIM];
+    int receive_rank,send_rank;
+    int err_count=0;
+
+    for (t=0;t<neighbor[0]+1;t++)
+    {
+        for (x=0;x<neighbor[1]+1;x++)
+        {
+            for (y=0;y<neighbor[2]+1;y++)
+            {
+                for (z=0;z<neighbor[3]+1;z++)
+                {
+                    index=(z+y*2+x*4+t*8);
+
+                    receive_rank_coords[0]=safe_mod(cpr[0]*L0+receive_bases[index*DIM]-shift[0],N0)/L0;
+                    receive_rank_coords[1]=safe_mod(cpr[1]*L1+receive_bases[index*DIM+1]-shift[1],N1)/L1;
+                    receive_rank_coords[2]=safe_mod(cpr[2]*L2+receive_bases[index*DIM+2]-shift[2],N2)/L2;
+                    receive_rank_coords[3]=safe_mod(cpr[3]*L3+receive_bases[index*DIM+3]-shift[3],N3)/L3;
+                    receive_rank=ipr_global(receive_rank_coords);
+
+                    send_rank_coords[0]=safe_mod(cpr[0]*L0+send_bases[index*DIM]+shift[0],N0)/L0;
+                    send_rank_coords[1]=safe_mod(cpr[1]*L1+send_bases[index*DIM+1]+shift[1],N1)/L1;
+                    send_rank_coords[2]=safe_mod(cpr[2]*L2+send_bases[index*DIM+2]+shift[2],N2)/L2;
+                    send_rank_coords[3]=safe_mod(cpr[3]*L3+send_bases[index*DIM+3]+shift[3],N3)/L3;
+                    send_rank=ipr_global(send_rank_coords);
+
+                    if ((my_rank==receive_rank)&&(my_rank==send_rank))
+                    {
+                        /*No other process involved. We shift internally.*/
+                        
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+static void create_corr_copy(void)
 {
     corr_copy=malloc(npcorr*VOLUME*sizeof(complex_dble));
-    error(corr_copy==NULL,1,"alloc_data [rotation.c]",
-            "Unable to allocate data arrays");
+    error(corr_copy==NULL,1,"create_corr_copy [shift.c]",
+            "Unable to allocate corr_copy array");
+
+    copy_corr_data(corr_copy);
 }
+
+
+
+static void free_corr_copy(void)
+{
+    if (corr_copy!=NULL)
+    {
+        free(corr_copy);
+        corr_copy=NULL;
+    }
+}
+
+
+

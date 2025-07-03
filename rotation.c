@@ -108,7 +108,7 @@ static char cnfg_file[NAME_SIZE],nbase[NAME_SIZE],outbase[NAME_SIZE];
 static FILE *fin=NULL,*flog=NULL,*fend=NULL,*fdat=NULL;
 
 
-static void maxn(int *n, int m)
+static void maxn(int *n,int m)
 {
     if ((*n)<m)
         (*n)=m;
@@ -121,6 +121,14 @@ static void alloc_data(void)
     data.corr_out=malloc(npcorr*VOLUME*sizeof(complex_dble));
     error((data.corr==NULL)||(data.corr_out==NULL),1,"alloc_data [rotation.c]",
             "Unable to allocate data arrays");
+}
+
+
+void copy_corr_data(complex_dble *dest)
+{
+    error(data.corr==NULL,1,"copy_corr_data [rotation.c]",
+            "Data arrays not allocated");
+    memcpy(dest,data.corr,npcorr*VOLUME*sizeof(complex_dble));
 }
 
 

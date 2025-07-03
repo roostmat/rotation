@@ -29,12 +29,17 @@ typedef struct
 
 
 
+/* ROTATION_C */
+extern void copy_corr_data(complex_dble *dest);
+
+
+
 /* PARALLEL_OUT_C */
 extern MPI_Datatype MPI_COMPLEX_DOUBLE;
 extern void create_MPI_COMPLEX_DOUBLE(void);
 extern void free_MPI_COMPLEX_DOUBLE(void);
 extern void lex_global(int *x,int *ip,int *ix);
-extern void set_up_parallel_out(int *_outlat, int _pos, int _bcon);
-extern void parallel_write(char *filename, corr_data *data, int *srcs);
+extern void set_up_parallel_out(int *_outlat,int _pos,int _bcon);
+extern void parallel_write(char *filename,corr_data *data,int *srcs);
 
 #endif
