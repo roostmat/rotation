@@ -85,7 +85,7 @@ static struct
  * x0s: x0 position of the source for each correlator
  * srcs: source coordinates for each correlator
 ***************************************************************************/
-static corr_data data;                  /* data structure for the correlators */
+corr_data data;                         /* data structure for the correlators */
 int npcorr=-1;                          /* number of point correlators */
 int outlat[4]={-1,-1,-1,-1};            /* output lattice dimensions */
 int pos=-1;                             /* positioning of the source insided the output lattice*/
@@ -1650,7 +1650,7 @@ int main(int argc,char *argv[])
 
     geometry();
     init_rng();
-    set_up_parallel_out(outlat,pos,bcon);
+    set_up_parallel_out();
 
     make_proplist();
     wsize(&nws,&nwv,&nwvd);
