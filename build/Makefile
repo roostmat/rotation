@@ -19,7 +19,7 @@ all: rmxeq mkdep mkxeq
 
 # main programs and modules to be compiled
 
-MAIN = rotation parallel_out_test
+MAIN = rotation parallel_out_test shift_corr_test
 
 ARCHIVE = archive iodat marchive sarchive
 
@@ -50,7 +50,7 @@ RANDOM = ranlux ranlux_common ranlxs ranlxd gauss
 
 RATFCTS = elliptic zolotarev ratfcts
 
-ROTATION = parallel_out
+ROTATION = parallel_out rotation_utils shift_corr
 
 SAP = blk_solv sap_com sap_gcr sap
 
@@ -103,8 +103,8 @@ VPATH = .:$(MDIR)/flags:$(MDIR)/lattice:$(MDIR)/archive:$(MDIR)/linalg:\
 
 
 # additional include directories
-MPI_HOME = /opt/ohpc/pub/mpi/openmpi5-gnu14/5.0.5
-INCPATH = /opt/ohpc/pub/mpi/openmpi5-gnu14/5.0.5/include ./include ../../openQCD-2.4.1/include
+MPI_HOME = /usr/local/openmpi-4.0.5
+INCPATH = /usr/local/openmpi-4.0.5/include ./include ../../openQCD-2.4.1/include
 
 # additional libraries
 

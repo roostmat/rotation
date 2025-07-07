@@ -16,29 +16,38 @@
 
 typedef struct
 {
-    int size;                        /* outlat[0]*outlat[1]*outlat[2]*outlat[3] */
     complex_dble *corr;              /* size: npcorr*VOLUME */
     complex_dble *corr_tmp;          /* size: npcorr*VOLUME */
-    complex_dble *corr_out;          /* size: npcorr*VOLUME */
-    int nc;
-} corr_data;
+    int nc;                          /* configuration */
+} corr_data_t;
+
+typedef struct
+{
+    int outlat[4];                   /* output lattice dimensions */
+    int size;                        /* outlat[0]*outlat[1]*outlat[2]*outlat[3] */
+    int npcorr;                      /* number of point correlators */
+} corr_data_parms_t;
 
 
 
-/* ROTATION_C */
+
+/* ROTATION_C 
 extern const int npcorr;
 extern const int outlat[4];
 extern const int pos;
 extern const int bcon;
-extern corr_data data;               /* data structure for the correlators */
-extern void copy_corr_data(complex_dble *dest);
+extern corr_data data;
+extern void copy_corr_data(complex_dble *dest); */
 
 
 
-/* MPI_UTIL_C*/
-extern const MPI_Datatype MPI_COMPLEX_DOUBLE;
-extern void create_MPI_COMPLEX_DOUBLE(void);
-extern void free_MPI_COMPLEX_DOUBLE(void);
+/* ROTATION_UTIL_C*/
+extern void create_MPI_COMPLEX_DOUBLE(MPI_Datatype *mpi_complex_double);
+extern void free_MPI_COMPLEX_DOUBLE(MPI_Datatype *mpi_complex_double);
+extern void set_corr_data_parms(int outlat[4], int npcorr);
+extern void get_outlat(int outlat[4]);
+extern int get_size(void);
+extern int get_npcorr(void);
 
 
 
@@ -51,6 +60,6 @@ extern void cleanup_shift(void);
 /* PARALLEL_OUT_C */
 extern void lex_global(int *x,int *ip,int *ix);
 extern void set_up_parallel_out(void);
-extern void parallel_write(char *filename,corr_data *data,int *srcs);
+extern void parallel_write(char *filename,corr_data_t *data,int *srcs);
 
 #endif

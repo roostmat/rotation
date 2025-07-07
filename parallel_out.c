@@ -16,6 +16,8 @@
 
 
 static int my_rank,endian,setup=0;
+static int outlat[4]={-1,-1,-1,-1},size,npcorr; /* output lattice dimensions */
+static MPI_Datatype MPI_COMPLEX_DOUBLE;
 static int int_size=0,complex_double_size=0;
 
 
@@ -52,7 +54,12 @@ void set_up_parallel_out(void)
     if (setup==0)
     {
         int err_count;
-        create_MPI_COMPLEX_DOUBLE();
+
+        get_outlat(outlat);
+        size=get_size();
+        npcorr=get_npcorr();
+
+        create_MPI_COMPLEX_DOUBLE(&MPI_COMPLEX_DOUBLE);
         endian=endianness();
         /* Calculate data sizes */
         err_count=MPI_Type_size(MPI_INT,&int_size);
@@ -69,7 +76,7 @@ void set_up_parallel_out(void)
 
 
 
-void parallel_write(char *filename, corr_data *data, int *srcs)
+void parallel_write(char *filename, corr_data_t *data, int *srcs)
 {
     int ip,ix,*io,coords[4],start_coords[4];
     int ipcorr,t,x,y,z,npts;
@@ -87,25 +94,15 @@ void parallel_write(char *filename, corr_data *data, int *srcs)
             "Failed to allocate memory for io array");
 
     /* Collect the data that each process contributes (0 <= npts < VOLUME)
-       to data.corr_out in the correct order and find the displacements of the
+       to data.corr in the correct order and find the displacements of the
        data points in the output file */
     npts=0;
     for (ipcorr=0;ipcorr<npcorr;ipcorr++)
     {
-        if (pos==0)
-        {
-            start_coords[0]=srcs[4*ipcorr+0];
-            start_coords[1]=srcs[4*ipcorr+1];
-            start_coords[2]=srcs[4*ipcorr+2];
-            start_coords[3]=srcs[4*ipcorr+3];
-        }
-        else
-        {
-            start_coords[0]=safe_mod(srcs[4*ipcorr+0]-(outlat[0]-1)/2,N0);
-            start_coords[1]=safe_mod(srcs[4*ipcorr+1]-(outlat[1]-1)/2,N1);
-            start_coords[2]=safe_mod(srcs[4*ipcorr+2]-(outlat[2]-1)/2,N2);
-            start_coords[3]=safe_mod(srcs[4*ipcorr+3]-(outlat[3]-1)/2,N3);
-        }
+        start_coords[0]=srcs[4*ipcorr+0];
+        start_coords[1]=srcs[4*ipcorr+1];
+        start_coords[2]=srcs[4*ipcorr+2];
+        start_coords[3]=srcs[4*ipcorr+3];
 
         for (t=0;t<outlat[0];t++)
         {
@@ -122,8 +119,8 @@ void parallel_write(char *filename, corr_data *data, int *srcs)
                         lex_global(coords,&ip,&ix);
                         if (my_rank==ip)
                         {
-                            io[npts]=ipcorr*(data->size)+((t*outlat[1]+x)*outlat[2]+y)*outlat[3]+z;
-                            (data->corr_out)[npts]=(data->corr)[ipcorr*VOLUME+ix];
+                            io[npts]=ipcorr*size+((t*outlat[1]+x)*outlat[2]+y)*outlat[3]+z;
+                            (data->corr)[npts]=(data->corr)[ipcorr*VOLUME+ix];
                             npts++;
                         }
                     }
@@ -135,7 +132,7 @@ void parallel_write(char *filename, corr_data *data, int *srcs)
     /* Convert endianess to little endian */
     if (endian==BIG_ENDIAN)
     {
-        bswap_double(npcorr*VOLUME*2,data->corr_out);
+        bswap_double(npcorr*VOLUME*2,data->corr);
     }
 
     /* Create blocklenghts and displacements arrays for MPI_Type_indexed */
@@ -166,7 +163,7 @@ void parallel_write(char *filename, corr_data *data, int *srcs)
     err_count=MPI_Type_get_extent(filetype,&lb,&extent);
     error(err_count!=MPI_SUCCESS,err_count,"parallel_write [parallel_out.c]",
             "Failed to get extent of custom MPI data type for file view");
-    error((long)extent>npcorr*data->size*sizeof(complex_dble),1,"parallel_write [parallel_out.c]",
+    error((long)extent>npcorr*size*sizeof(complex_dble),1,"parallel_write [parallel_out.c]",
             "Extent of custom MPI data type for file view is too large");
 
     /* Open file */
@@ -181,7 +178,7 @@ void parallel_write(char *filename, corr_data *data, int *srcs)
             "Failed to set file view");
 
     /* Write data in parallel */
-    err_count=MPI_File_write_all(fh,data->corr_out,npts,MPI_COMPLEX_DOUBLE,MPI_STATUSES_IGNORE);
+    err_count=MPI_File_write_all(fh,data->corr,npts,MPI_COMPLEX_DOUBLE,MPI_STATUSES_IGNORE);
     error(err_count!=MPI_SUCCESS,err_count,"parallel_write [parallel_out.c]",
             "Failed to write data to file");
 

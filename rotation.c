@@ -85,11 +85,11 @@ static struct
  * x0s: x0 position of the source for each correlator
  * srcs: source coordinates for each correlator
 ***************************************************************************/
-corr_data data;                         /* data structure for the correlators */
-int npcorr=-1;                          /* number of point correlators */
-int outlat[4]={-1,-1,-1,-1};            /* output lattice dimensions */
-int pos=-1;                             /* positioning of the source insided the output lattice*/
-int bcon=-1;                            /* boundary conditions of the run */
+static corr_data_t data;                       /* data structure for the correlators */
+static int npcorr=-1;                          /* number of point correlators */
+static int outlat[4]={-1,-1,-1,-1};            /* output lattice dimensions */
+static int pos=-1;                             /* positioning of the source insided the output lattice*/
+static int bcon=-1;                            /* boundary conditions of the run */
 static int my_rank,noexp,endian; /* append,norng; */
 static int first,step,last;
 static int level,seed,nprop;
@@ -118,17 +118,9 @@ static void maxn(int *n,int m)
 static void alloc_data(void)
 {
     data.corr=malloc(npcorr*VOLUME*sizeof(complex_dble));
-    data.corr_out=malloc(npcorr*VOLUME*sizeof(complex_dble));
-    error((data.corr==NULL)||(data.corr_out==NULL),1,"alloc_data [rotation.c]",
+    data.corr_tmp=malloc(npcorr*VOLUME*sizeof(complex_dble));
+    error((data.corr==NULL)||(data.corr_tmp==NULL),1,"alloc_data [rotation.c]",
             "Unable to allocate data arrays");
-}
-
-
-void copy_corr_data(complex_dble *dest)
-{
-    error(data.corr==NULL,1,"copy_corr_data [rotation.c]",
-            "Data arrays not allocated");
-    memcpy(dest,data.corr,npcorr*VOLUME*sizeof(complex_dble));
 }
 
 
@@ -371,7 +363,7 @@ static void read_run_parms(void)
     MPI_Bcast(&cF,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
     MPI_Bcast(outlat,4,MPI_INT,0,MPI_COMM_WORLD);
     MPI_Bcast(&pos,1,MPI_INT,0,MPI_COMM_WORLD);
-    data.size=outlat[0]*outlat[1]*outlat[2]*outlat[3]; /* set the volume of the output lattice */
+    set_corr_data_parms(outlat,npcorr);
 
     kappas=malloc(nprop*sizeof(double));
     mus=malloc(nprop*sizeof(double));
@@ -1477,6 +1469,27 @@ static void solve_dirac(int prop, spinor_dble *eta, spinor_dble *psi,
 }
 
 
+
+static void add_tmp_to_corr(void)
+{
+    int i,ipcorr;
+
+    for (ipcorr=0;ipcorr<npcorr;ipcorr++)
+    {
+        for (i=0;i<VOLUME;i++)
+        {
+            data.corr[ipcorr*VOLUME+i].re+=data.corr_tmp[ipcorr*VOLUME+i].re;
+            data.corr[ipcorr*VOLUME+i].im+=data.corr_tmp[ipcorr*VOLUME+i].im;
+        }
+    }
+    for (i=0;i<npcorr*VOLUME;i++)
+    {
+        data.corr_tmp[i].re=0.0;
+        data.corr_tmp[i].im=0.0;
+    }
+}
+
+
 static void point_correlators(void)
 {
     int i,iy,ix0,iprop,ipcorr,cc,stat[6],src_coords[4];
@@ -1500,8 +1513,8 @@ static void point_correlators(void)
     {
         data.corr[i].re=0.0;
         data.corr[i].im=0.0;
-        data.corr_out[i].re=0.0;
-        data.corr_out[i].im=0.0;
+        data.corr_tmp[i].re=0.0;
+        data.corr_tmp[i].im=0.0;
     }
 
     for (ix0=0;ix0<proplist.nux0;ix0++)
