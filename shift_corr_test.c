@@ -1,3 +1,16 @@
+/**************************************************************************************
+ *  shift_corr_test.c
+ * 
+ * Test program for the shift_corr module.
+ * 
+ * To run a test, compile this file using "make shift_corr_test"
+ * and run it with the command line arguments:
+ * -v v0 v1 v2 v3 [-npcorr n]
+ * where v0, v1, v2, v3 are the shift values in each direction
+ * and n is the number of correlators to test (default is 1).
+ * 
+ **************************************************************************************/
+
 #define MAIN_PROGRAM
 
 #include <stdlib.h>
@@ -33,7 +46,8 @@
 
 
 
-static int my_rank;
+static int my_rank,lattice_setup=0;
+static int dummy_outlat[4]={0,0,0,0}; /* Dummy output lattice for compatibility */
 static complex_dble *corr,*corr_shifted;
 static int shift_vec[4]={0,0,0,0},npcorr=-1;
 
@@ -41,7 +55,7 @@ static int shift_vec[4]={0,0,0,0},npcorr=-1;
 
 int global_index(int *coords)
 {
-    return coords[0]*N1*N2*N3 + coords[1]*N2*N3 + coords[2]*N3 + coords[3];
+    return coords[0]*N1*N2*N3+coords[1]*N2*N3+coords[2]*N3+coords[3];
 }
 
 
@@ -66,7 +80,7 @@ void setup_lattices(void)
             {
                 for (z=0;z<L3;z++)
                 {
-                    i=z+ y*L3 + x*L2*L3 + t*L1*L2*L3;
+                    i=z+y*L3+x*L2*L3+t*L1*L2*L3;
                     
                     global_coords[0]=cpr[0]*L0+t;
                     global_coords[1]=cpr[1]*L1+x;
@@ -92,6 +106,7 @@ void setup_lattices(void)
             }
         }
     }
+    lattice_setup=1;
 }
 
 
@@ -102,7 +117,7 @@ void compare_lattices(void)
 
     for (i=0;i<npcorr*VOLUME;i++)
     {
-        if ((corr[i].re!=corr_shifted[i].re) || (corr[i].im!=corr_shifted[i].im))
+        if ((corr[i].re!=corr_shifted[i].re)||(corr[i].im!=corr_shifted[i].im))
         {
             errors++;
         }
@@ -114,7 +129,7 @@ void compare_lattices(void)
     {
         if (total_errors>0)
         {
-            printf("SHIFT FAILED:Total errors: %d\n", total_errors);
+            printf("SHIFT FAILED:Total errors: %d\n",total_errors);
         }
         else
         {
@@ -122,6 +137,90 @@ void compare_lattices(void)
         }
     }
 }
+
+
+
+void print_corr_slice(complex_dble *corr_array,int y_slice,int z_slice,int correlator,const char *array_name)
+{
+    int t,x,i;
+    int global_coords[DIM];
+    int rank,local_index;
+    double row[N0];
+
+    error(!lattice_setup,1,"print_corr_slice [shift.c]",
+          "Lattice not initialized. Call setup_lattices() first.");
+
+    if (my_rank==0)
+    {
+        printf("\n%s[correlator=%d, y=%d, z=%d]:\n",array_name,correlator,y_slice,z_slice);
+
+        /* Print header with t-coordinates */
+        printf("   t: ");
+        for (t=0;t<N0;t++)
+        {
+            printf("%6d ",t);
+        }
+        printf("\n");
+        fflush(stdout);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    /* Print each x-row (reverse order for visual clarity) */
+    for (x=N1-1;x>=0;x--)
+    {
+        for (i=0;i<N0;i++)
+        {
+            row[i]=0.0; /* Initialize row */
+        }
+        
+        for (t=0;t<N0;t++)
+        {
+            /* Set global coordinates */
+            global_coords[0]=t;
+            global_coords[1]=x;
+            global_coords[2]=y_slice;
+            global_coords[3]=z_slice;
+
+            /* Calculate which process this coordinate belongs to */
+            /* and the local index */
+            lex_global(global_coords,&rank,&local_index);
+            
+            /* print the real value */
+            if (my_rank==rank)
+            {
+                row[t]=corr_array[(correlator-1)*VOLUME+local_index].re;
+            }
+        }
+        MPI_Allreduce(MPI_IN_PLACE,row,N0,MPI_DOUBLE,MPI_SUM,MPI_COMM_WORLD);
+        
+        if (my_rank==0)
+        {
+            printf("x=%2d: ",x);
+            for (i=0;i<N0;i++)
+            {
+                printf("%6.0f ",row[i]);
+            }
+            printf("\n");
+            fflush(stdout);
+        }
+    }
+    if (my_rank==0)
+    {
+        printf("\n");
+        fflush(stdout);
+    }
+}
+
+
+
+void check_cpr(void)
+{
+    int rank;
+    rank=ipr_global(cpr);
+    error(rank!=my_rank,1,"check_cpr [shift.c]",
+          "cpr does not match my_rank. Check lattice setup.");
+}
+
 
 
 int main(int argc,char *argv[])
@@ -157,44 +256,39 @@ int main(int argc,char *argv[])
             }
         }
     }
-    MPI_Bcast(shift_vec, 4, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&npcorr, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(shift_vec,4,MPI_INT,0,MPI_COMM_WORLD);
+    MPI_Bcast(&npcorr,1,MPI_INT,0,MPI_COMM_WORLD);
     if (npcorr<1)
     {
         MPI_Finalize();
         return 1;
     }
+    set_corr_data_parms(dummy_outlat,npcorr);
 
-    MPI_Barrier(MPI_COMM_WORLD);
     if (my_rank==0)
     {
-        printf("Shift vector: (%d, %d, %d, %d)\n", shift_vec[0], shift_vec[1], shift_vec[2], shift_vec[3]);
-        printf("Number of correlators: %d\n\n", npcorr);
+        printf("Shift vector: (%d, %d, %d, %d)\n",shift_vec[0],shift_vec[1],shift_vec[2],shift_vec[3]);
+        printf("Number of correlators: %d\n\n",npcorr);
         fflush(stdout);
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
     /* Set up lattice geometry */
     geometry();
-    if (my_rank==0)
-    {
-        printf("Geometry set up.\n");
-        fflush(stdout);
-    }
-
     setup_lattices();
-    if (my_rank==0)
-    {
-        printf("Lattices set up.\n");
-        fflush(stdout);
-    }
 
-    shift_corr(corr, shift_vec);
+    check_cpr();
+
+    print_corr_slice(corr,0,0,1,"Original Lattice");
+    print_corr_slice(corr_shifted,0,0,1,"Control Lattice");
+
+    shift_corr(corr,shift_vec);
     if (my_rank==0)
     {
         printf("Correlation functions shifted.\n");
         fflush(stdout);
     }
+
+    print_corr_slice(corr,0,0,1,"Shifted Lattice");
 
     cleanup_shift();
     if (my_rank==0)

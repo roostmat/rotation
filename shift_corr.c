@@ -22,13 +22,38 @@ static int npcorr=-1;
 static MPI_Datatype MPI_COMPLEX_DOUBLE;
 static complex_dble *corr_copy=NULL;
 
-static int shift[DIM]={0},neighbor_long[MAX_NEIGHBORS]={0};
+static int shift[DIM]={0,0,0,0},neighbor_long[MAX_NEIGHBORS]={0};
 static int receive_bases[MAX_NEIGHBORS*DIM],send_bases[MAX_NEIGHBORS*DIM],
             block_volume[MAX_NEIGHBORS];
 static MPI_Datatype receive_types[MAX_NEIGHBORS]={MPI_DATATYPE_NULL},
                     send_types[MAX_NEIGHBORS]={MPI_DATATYPE_NULL};
 static int *receive_indices[MAX_NEIGHBORS]={NULL},
             *send_indices[MAX_NEIGHBORS]={NULL};
+
+
+
+static void init_send_receive_structure(void)
+{
+    int i;
+
+    for (i=0;i<MAX_NEIGHBORS;i++)
+    {
+        receive_indices[i]=NULL;
+        send_indices[i]=NULL;
+        neighbor_long[i]=0;
+        block_volume[i]=0;
+        receive_bases[i*DIM]=0;
+        receive_bases[i*DIM+1]=0;
+        receive_bases[i*DIM+2]=0;
+        receive_bases[i*DIM+3]=0;
+        send_bases[i*DIM]=0;
+        send_bases[i*DIM+1]=0;
+        send_bases[i*DIM+2]=0;
+        send_bases[i*DIM+3]=0;
+        receive_types[i]=MPI_DATATYPE_NULL;
+        send_types[i]=MPI_DATATYPE_NULL;
+    }
+}
 
 
 
@@ -48,6 +73,8 @@ static void setup_shift(void)
         corr_copy=malloc(npcorr*VOLUME*sizeof(complex_dble));
         error(corr_copy==NULL,1,"setup_shift [shift.c]",
                 "Unable to allocate corr_copy array");
+
+        init_send_receive_structure();
         setup=1;
     }
 }
@@ -86,7 +113,7 @@ static void calculate_send_receive_structure(void)
             {
                 for (z=0;z<neighbor[3]+1;z++)
                 {
-                    i=(z+y*2+x*4+t*8); /* i is the index of the neighbor */
+                    i=z+y*2+x*4+t*8; /* i is the index of the neighbor */
 
                     neighbor_long[i]=1;
 
@@ -209,15 +236,19 @@ static void shift_data(complex_dble *corr)
                 /* No other process involved. We shift internally. */
                 for (j=0;j<npcorr*block_volume[i];j++)
                 {
+                    error(receive_indices[i][j]<0||receive_indices[i][j]>=npcorr*VOLUME,1,
+                          "shift_data [shift.c]",
+                          "Invalid receive index %d for process %d", receive_indices[i][j], my_rank);
+                    error(send_indices[i][j]<0||send_indices[i][j]>=npcorr*VOLUME,1,
+                          "shift_data [shift.c]",
+                          "Invalid send index %d for process %d", send_indices[i][j], my_rank);
                     corr[receive_indices[i][j]]=corr_copy[send_indices[i][j]];
                 }
             }
             else
             {
-                err_count=MPI_Sendrecv(corr_copy,npcorr*block_volume[i],send_types[i],
-                                        send_rank,0,
-                                        corr,npcorr*block_volume[i],receive_types[i],
-                                        receive_rank,0,
+                err_count=MPI_Sendrecv(corr_copy,1,send_types[i],send_rank,0,
+                                        corr,1,receive_types[i],receive_rank,0,
                                         MPI_COMM_WORLD,MPI_STATUS_IGNORE);
                 error(err_count!=MPI_SUCCESS,1,"shift_data [shift.c]",
                         "Process with rank %d failed to send/receive data during shift", my_rank);
@@ -288,6 +319,10 @@ void shift_corr(complex_dble *corr,int *shift_vec)
         calculate_send_receive_structure();
     }
 
-    /* Perform the shift */
-    shift_data(corr);
+    if ((shift_vec[0]!=0)||(shift_vec[1]!=0)||
+        (shift_vec[2]!=0)||(shift_vec[3]!=0))
+    {
+        /* Perform the shift */
+        shift_data(corr);
+    }
 }
