@@ -202,7 +202,7 @@ static void write_head(void)
  *************************************************************************/
 static void write_data(void)
 {
-    int iw;
+    int iw,out_sources[npcorr*4];
 
     sprintf(dat_file,"%s/%sn%d.rotation.dat",dat_dir,outbase,data.nc);
     if (my_rank==0)
@@ -216,20 +216,26 @@ static void write_data(void)
         /* Write the source coordinates of each pcorr at the beginning */
         if (endian==BIG_ENDIAN)
         {
-            bswap_int(npcorr*4,srcs);
+            bswap_int(nsrcs*4,srcs);
         }
-        iw=fwrite(srcs,sizeof(int),npcorr*4,fdat);
+        iw=fwrite(srcs,sizeof(int),nsrcs*4,fdat);
         if (endian==BIG_ENDIAN)
         {
-            bswap_int(npcorr*4,srcs);
+            bswap_int(nsrcs*4,srcs);
         }
-        error_root(iw!=npcorr*4,1,"write_data [rotation.c]",
+        error_root(iw!=nsrcs*4,1,"write_data [rotation.c]",
                 "Incorrect write count");
         fclose(fdat);
     }
     /* Write the point correlators */
     MPI_Barrier(MPI_COMM_WORLD);
-    parallel_write(dat_file,&data,srcs);
+    
+    /* Set out_sources to origin */
+    for (int i=0;i<nsrcs*4;i++)
+    {
+        out_sources[i]=0;
+    }
+    parallel_write(dat_file,&data,out_sources);
 }
 
 

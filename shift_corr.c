@@ -326,3 +326,137 @@ void shift_corr(complex_dble *corr,int *shift_vec)
         shift_data(corr);
     }
 }
+
+
+
+static void average_2points(complex_dble *corr,int coords1[DIM],int coords2[DIM])
+{
+    int index1,index2;
+    int rank1,rank2;
+    complex_dble received_value;
+    int err_count=0;
+
+    lex_global(coords1,&rank1,&index1);
+    lex_global(coords2,&rank2,&index2);
+
+    if ((rank1==my_rank)&&(rank2==my_rank))
+    {
+        /* Both points are on the same process */
+        corr[index1].re=0.5*(corr[index1].re + corr[index2].re);
+        corr[index1].im=0.5*(corr[index1].im + corr[index2].im);
+        corr[index2].re=corr[index1].re;
+        corr[index2].im=corr[index1].im;
+    }
+    else if (rank1==my_rank)
+    {
+        err_count=MPI_Sendrecv(corr+index1,1,MPI_COMPLEX_DOUBLE,
+                                rank2,index1,
+                                &received_value,1,MPI_COMPLEX_DOUBLE,
+                                rank2,index2,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+        error(err_count!=MPI_SUCCESS,1,"average_2points [shift.c]",
+                "Failed to send/receive data for averaging points (%d,%d,%d,%d) and (%d,%d,%d,%d)",
+                coords1[0],coords1[1],coords1[2],coords1[3],
+                coords2[0],coords2[1],coords2[2],coords2[3]);
+        corr[index1].re=0.5*(corr[index1].re + received_value.re);
+        corr[index1].im=0.5*(corr[index1].im + received_value.im);
+    }
+    else if (rank2==my_rank)
+    {
+        err_count=MPI_Sendrecv(corr+index2,1,MPI_COMPLEX_DOUBLE,
+                                rank1,index2,
+                                &received_value,1,MPI_COMPLEX_DOUBLE,
+                                rank1,index1,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+        error(err_count!=MPI_SUCCESS,1,"average_2points [shift.c]",
+                "Failed to send/receive data for averaging points (%d,%d,%d,%d) and (%d,%d,%d,%d)",
+                coords1[0],coords1[1],coords1[2],coords1[3],
+                coords2[0],coords2[1],coords2[2],coords2[3]);
+        corr[index2].re=0.5*(corr[index2].re + received_value.re);
+        corr[index2].im=0.5*(corr[index2].im + received_value.im);
+    }
+}
+
+
+
+void average_equiv(complex_dble *corr,int outlat[4])
+{
+    int t,x,y,z,i,j;
+    int coords1[DIM],coords2[DIM];
+    int small_volume;
+
+    /* Average on-axis */
+    coords1[1]=0;
+    coords1[2]=0;
+    coords1[3]=0;
+    coords2[1]=0;
+    coords2[2]=0;
+    coords2[3]=0;
+    for (t=1;t<((outlat[0])<((N0+1)/2)?(outlat[0]):((N0+1)/2));t++)
+    {
+        coords1[0]=t;
+        coords2[0]=N0-t;
+        average_2points(corr,coords1,coords2);
+    }
+
+    coords1[0]=0;
+    coords1[2]=0;
+    coords1[3]=0;
+    coords2[0]=0;
+    coords2[2]=0;
+    coords2[3]=0;
+    for (x=1;x<((outlat[1])<((N1+1)/2)?(outlat[1]):((N1+1)/2));x++)
+    {
+        coords1[1]=x;
+        coords2[1]=N1-x;
+        average_2points(corr,coords1,coords2);
+    }
+
+    coords1[0]=0;
+    coords1[1]=0;
+    coords1[3]=0;
+    coords2[0]=0;
+    coords2[1]=0;
+    coords2[3]=0;
+    for (y=1;y<((outlat[2])<((N2+1)/2)?(outlat[2]):((N2+1)/2));y++)
+    {
+        coords1[2]=y;
+        coords2[2]=N2-y;
+        average_2points(corr,coords1,coords2);
+    }
+
+    coords1[0]=0;
+    coords1[1]=0;
+    coords1[2]=0;
+    coords2[0]=0;
+    coords2[1]=0;
+    coords2[2]=0;
+    for (z=1;z<((outlat[3])<((N3+1)/2)?(outlat[3]):((N3+1)/2));z++)
+    {
+        coords1[3]=z;
+        coords2[3]=N3-z;
+        average_2points(corr,coords1,coords2);
+    }
+
+    /* Average off-axis */
+    small_volume=(N0-1)*(N1-1)*(N2-1)*(N3-1);
+
+    for (i=0;i<small_volume;i++)
+    {
+        j=small_volume-1-i;
+        coords1[0]=i/((N1-1)*(N2-1)*(N3-1))+1;
+        coords1[1]=(i/((N2-1)*(N3-1)))%((N1-1))+1;
+        coords1[2]=(i/((N3-1)))%((N2-1))+1;
+        coords1[3]=i%((N3-1))+1;
+        coords2[0]=j/((N1-1)*(N2-1)*(N3-1))+1;
+        coords2[1]=(j/((N2-1)*(N3-1)))%((N1-1))+1;
+        coords2[2]=(j/((N3-1)))%((N2-1))+1;
+        coords2[3]=j%((N3-1))+1;
+
+        if (((coords1[0]<outlat[0])&&(coords1[1]<outlat[1])&&
+             (coords1[2]<outlat[2])&&(coords1[3]<outlat[3]))||
+            ((coords2[0]<outlat[0])&&(coords2[1]<outlat[1])&&
+             (coords2[2]<outlat[2])&&(coords2[3]<outlat[3])))
+        {
+            average_2points(corr,coords1,coords2);
+        }
+    }
+}

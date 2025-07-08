@@ -55,6 +55,7 @@ extern int get_npcorr(void);
 /* SHIFT_C */
 extern void shift_corr(complex_dble *corr,int *shift_vec);
 extern void cleanup_shift(void);
+extern void average_equiv(complex_dble *corr,int outlat[4]);
 
 
 

@@ -26,21 +26,6 @@
 #include "utils.h" /* for error, error_root */
 
 
-#include "su3.h"
-#include "random.h"
-#include "flags.h"
-#include "archive.h"
-#include "sflds.h"
-#include "linalg.h"
-#include "dirac.h"
-#include "sap.h"
-#include "dfl.h"
-#include "forces.h"
-#include "version.h"
-#include "uflds.h"
-#include "mesons.h"
-
-
 
 #define DIM 4
 
