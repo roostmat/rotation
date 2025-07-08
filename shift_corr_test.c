@@ -282,6 +282,12 @@ int main(int argc,char *argv[])
     print_corr_slice(corr_shifted,0,0,1,"Control Lattice");
 
     shift_corr(corr,shift_vec);
+    shift_corr(corr,shift_vec);
+    shift_vec[0]=-shift_vec[0];
+    shift_vec[1]=-shift_vec[1];
+    shift_vec[2]=-shift_vec[2];
+    shift_vec[3]=-shift_vec[3];
+    shift_corr(corr,shift_vec);
     if (my_rank==0)
     {
         printf("Correlation functions shifted.\n");

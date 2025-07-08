@@ -65,35 +65,23 @@
 
 
 
-static struct
-{
-    int nux0;            /* number of unique time slices */
-    int *ux0;            /* array of unique time slices */
-    int nmax;            /* max(nuprop) */
-    int *nuprop;         /* number of unique propagators (iprop) for each unique time slice */
-    int **uprop;         /* array of unique propagators (iprop) for each unique time slice */
-    int **uprop_index;   /* iprop = uprop[ix0][uprop_index[ix0][iprop]] */
-} proplist;
-
-
 /**************************************************************************
  * isps: index of the solver for each propagator
  * props1: index of the first propagator for each correlator
  * props2: index of the second propagator for each correlator
  * type1: Dirac structure of the first propagator for each correlator
  * type2: Dirac structure of the second propagator for each correlator
- * x0s: x0 position of the source for each correlator
  * srcs: source coordinates for each correlator
 ***************************************************************************/
 static corr_data_t data;                       /* data structure for the correlators */
 static int npcorr=-1;                          /* number of point correlators */
 static int outlat[4]={-1,-1,-1,-1};            /* output lattice dimensions */
-static int pos=-1;                             /* positioning of the source insided the output lattice*/
+static int nsrcs=-1;                           /* number of point sources */
 static int bcon=-1;                            /* boundary conditions of the run */
 static int my_rank,noexp,endian; /* append,norng; */
 static int first,step,last;
-static int level,seed,nprop;
-static int *isps,*props1,*props2,*type1,*type2,*x0s,*srcs;
+static int level,seed,nprop,ninverse;
+static int *isps,*props1,*props2,*type1,*type2,*srcs;
 static double *kappas,*mus;
 
 
@@ -129,8 +117,10 @@ static void alloc_data(void)
  * void write_head(void)
  *    Writes the header file for the run. The header file contains the
  *    number of point correlators (4 bytes), the output lattice dimensions
- *    (4*4 bytes), and for each point correlator Kappa1 (8 bytes), Kappa2
- *    (8 bytes), type1 (4 bytes), type2 (4 bytes), x0s (4 bytes).
+ *    (4*4 bytes), the number of point sources per correlator (4 bytes),
+ *    the boundary condition (4 bytes),
+ *    and for each point correlator Kappa1 (8 bytes), Kappa2
+ *    (8 bytes), type1 (4 bytes), type2 (4 bytes).
  * 
  *************************************************************************/
 static void write_head(void)
@@ -159,7 +149,7 @@ static void write_head(void)
             iw+=fwrite(istd,sizeof(stdint_t),1,fdat);
         }
 
-        istd[0]=(stdint_t)(pos);
+        istd[0]=(stdint_t)(nsrcs);
         if (endian==BIG_ENDIAN)
             bswap_int(1,istd);
         iw+=fwrite(istd,sizeof(stdint_t),1,fdat);
@@ -190,11 +180,6 @@ static void write_head(void)
             iw+=fwrite(istd,sizeof(stdint_t),1,fdat);
 
             istd[0]=(stdint_t)(type2[i]);
-            if (endian==BIG_ENDIAN)
-                bswap_int(1,istd);
-            iw+=fwrite(istd,sizeof(stdint_t),1,fdat);
-
-            istd[0]=(stdint_t)(x0s[i]);
             if (endian==BIG_ENDIAN)
                 bswap_int(1,istd);
             iw+=fwrite(istd,sizeof(stdint_t),1,fdat);
@@ -343,26 +328,28 @@ static void read_run_parms(void)
         read_line("csw","%lf",&csw);
         read_line("cF","%lf",&cF);
         read_iprms("outlat",4,outlat);
-        read_line("pos","%d",&pos);
+        read_line("nsrcs","%d",&nsrcs);
         error_root(nprop<1,1,"read_run_parms [rotation.c]",
-                "Specified nprop must be greater than 0");
+                "nprop must be greater than 0");
         error_root(npcorr<1,1,"read_run_parms [rotation.c]",
-                "Specified npcorr must be greater than 0");
+                "npcorr must be greater than 0");
         error_root((outlat[0]<=0)||(outlat[0]>N0)||
                     (outlat[1]<=0)||(outlat[1]>N1)||
                     (outlat[2]<=0)||(outlat[2]>N2)||
                     (outlat[3]<=0)||(outlat[3]>N3),1,
                     "read_run_parms [rotation.c]",
                     "Specified outlat out of range");
-        error_root((pos!=0)&&(pos!=1),1,"read_run_parms [rotation.c]",
-                    "Specified pos must be 0 or 1");
+        error_root(nsrcs<1,1,"read_run_parms [rotation.c]",
+                    "nsrcs must be greater than 0");
+        ninverse=nprop*nsrcs;
     }
     MPI_Bcast(&nprop,1,MPI_INT,0,MPI_COMM_WORLD);
     MPI_Bcast(&npcorr,1,MPI_INT,0,MPI_COMM_WORLD);
     MPI_Bcast(&csw,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
     MPI_Bcast(&cF,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
     MPI_Bcast(outlat,4,MPI_INT,0,MPI_COMM_WORLD);
-    MPI_Bcast(&pos,1,MPI_INT,0,MPI_COMM_WORLD);
+    MPI_Bcast(&nsrcs,1,MPI_INT,0,MPI_COMM_WORLD);
+    MPI_Bcast(&ninverse,1,MPI_INT,0,MPI_COMM_WORLD);
     set_corr_data_parms(outlat,npcorr);
 
     kappas=malloc(nprop*sizeof(double));
@@ -372,12 +359,11 @@ static void read_run_parms(void)
     props2=malloc(npcorr*sizeof(int));
     type1=malloc(npcorr*sizeof(int));
     type2=malloc(npcorr*sizeof(int));
-    x0s=malloc(npcorr*sizeof(int));
-    srcs=malloc(4*npcorr*sizeof(int));
+    srcs=malloc(4*nsrcs*sizeof(int));
 
     error((kappas==NULL)||(mus==NULL)||(isps==NULL)||(props1==NULL)||
-            (props2==NULL)||(type1==NULL)||(type2==NULL)||(x0s==NULL)||
-            (srcs==NULL),1,"read_run_parms [rotation.c]","Out of memory");
+            (props2==NULL)||(type1==NULL)||(type2==NULL)||(srcs==NULL),
+            1,"read_run_parms [rotation.c]","Out of memory");
 
     if (my_rank==0)
     {
@@ -467,16 +453,6 @@ static void read_run_parms(void)
             
             error_root((type1[ipcorr]==-1)||(type2[ipcorr]==-1),1,"read_run_parms [rotation.c]",
                         "Unknown or unsupported Dirac structure");
-            
-            read_line_opt("x0","-1","%d",&x0s[ipcorr]);
-            error_root((x0s[ipcorr]<-1)||(x0s[ipcorr]>N0),1,
-                        "read_run_parms [rotation.c]","Specified x0 out of range");
-            if ((bcon==0)&&(x0s[ipcorr]!=-1))
-            {
-                error_root(((x0s[ipcorr]-pos*(outlat[0]-1)/2)<0)||
-                            x0s[ipcorr]+outlat[0]/(1+pos)-1+pos>N0,1,
-                            "read_run_parms [rotation.c]","Combination of x0 and pos out of range");
-            }
         }
     }
 
@@ -490,7 +466,6 @@ static void read_run_parms(void)
     MPI_Bcast(props2,npcorr,MPI_INT,0,MPI_COMM_WORLD);
     MPI_Bcast(type1,npcorr,MPI_INT,0,MPI_COMM_WORLD);
     MPI_Bcast(type2,npcorr,MPI_INT,0,MPI_COMM_WORLD);
-    MPI_Bcast(x0s,npcorr,MPI_INT,0,MPI_COMM_WORLD);
 
     set_lat_parms(0.0,1.0,nprop,kappas,0,csw);
     set_sw_parms(sea_quark_mass(0));
@@ -651,7 +626,7 @@ static void print_info(void)
             printf("cF        = %.6f\n",bc.cF[0]);
         }
         printf("outlat    = %d %d %d %d\n",outlat[0],outlat[1],outlat[2],outlat[3]);
-        printf("source positioning: %s\n\n",(pos==0)?"edge":"center");
+        printf("number of point sources: %d\n\n",nsrcs);
 
         for (i=0; i<nprop; i++)
         {
@@ -665,7 +640,6 @@ static void print_info(void)
             printf("Point correlator %i:\n",i);
             printf("iprop  = %i %i\n",props1[i],props2[i]);
             printf("type   = %i %i\n",type1[i],type2[i]);
-            printf("x0     = %i\n\n",x0s[i]);
         }
         print_solver_parms(&isap,&idfl);
 
@@ -693,88 +667,6 @@ static void dfl_wsize(int *nws,int *nwv,int *nwvd)
     maxn(nws,dp.Ns+2);
     maxn(nwv,2*dpr.nmx_gcr+3);
     maxn(nwvd,2*dpr.nkv+4);
-}
-
-
-
-
-static void make_proplist(void)
-{
-    int i,j,ipcorr,new_flag;
-
-    /* find the unique time slices */
-    proplist.nux0=0;
-    proplist.ux0=malloc(N0*sizeof(int));
-    error(proplist.ux0==NULL,1,"make_proplist [rotation.c]",
-          "Unable to allocate proplist arrays");
-
-    for (ipcorr=0;ipcorr<npcorr;ipcorr++)
-    {
-        for (i=0;i<proplist.nux0;i++)
-        {
-            if (x0s[ipcorr]==proplist.ux0[i])
-                break;
-        }
-        if (i==proplist.nux0)
-        {
-            proplist.ux0[i]=x0s[ipcorr];
-            proplist.nux0++;
-        }
-    }
-   
-    proplist.nuprop=malloc(proplist.nux0*sizeof(int));
-    proplist.uprop=malloc(proplist.nux0*sizeof(int*));
-    proplist.uprop_index=malloc(proplist.nux0*sizeof(int*));
-    error((proplist.nuprop==NULL)||(proplist.uprop==NULL)||(proplist.uprop_index==NULL)
-          ,1,"make_proplist [rotation.c]","Out of memory");
-    proplist.nmax=0;
-
-    for (i=0;i<proplist.nux0;i++)
-    {
-        proplist.nuprop[i]=0;
-        proplist.uprop[i]=malloc(nprop*sizeof(int));
-        proplist.uprop_index[i]=malloc(nprop*sizeof(int));
-        error((proplist.uprop[i]==NULL)||(proplist.uprop_index[i]==0)
-                ,1,"make_proplist [rotation.c]","Out of memory");
-        for (ipcorr=0;ipcorr<npcorr;ipcorr++)
-        {
-            if (x0s[ipcorr]==proplist.ux0[i])
-            {
-                new_flag=1;
-                for (j=0;j<proplist.nuprop[i];j++)
-                {
-                    if (props1[ipcorr]==proplist.uprop[i][j])
-                    {
-                        new_flag=0;
-                        break;
-                    }
-                }
-                if (new_flag)
-                {
-                    proplist.uprop[i][proplist.nuprop[i]]=props1[ipcorr];
-                    proplist.uprop_index[i][props1[ipcorr]]=proplist.nuprop[i];
-                    proplist.nuprop[i]++;
-                }
-                new_flag=1;
-                for (j=0;j<proplist.nuprop[i];j++)
-                {
-                    if (props2[ipcorr]==proplist.uprop[i][j])
-                    {
-                        new_flag=0;
-                        break;
-                    }
-                }
-                if (new_flag)
-                {
-                    proplist.uprop[i][proplist.nuprop[i]]=props2[ipcorr];
-                    proplist.uprop_index[i][props2[ipcorr]]=proplist.nuprop[i];
-                    proplist.nuprop[i]++;
-                }
-            }
-        }
-        if (proplist.nuprop[i]>proplist.nmax)
-            proplist.nmax=proplist.nuprop[i];
-    }
 }
 
 
@@ -813,7 +705,7 @@ static void wsize(int *nws,int *nwv,int *nwvd)
 
     for (iprop=0;iprop<nprop;iprop++)
         solver_wsize(isps[iprop],0,1,nws,nwv,nwvd);
-    *nws+=2*(proplist.nmax*12+2);
+    *nws+=2*(ninverse*12+2);
 
 }
 
@@ -826,63 +718,85 @@ static void wsize(int *nws,int *nwv,int *nwvd)
  *      the source is placed at x0. If bcon=3, the source is placed at random.
  * 
  ******************************************************************************/
-void source_pos(int x0, int *src_coords)
+void set_srcs(void)
 {
-    int err_count=0;
+    int err_count=0,i,j;
     double rand[4];
-
-    /* check if outlat has been set */
-    error_root((outlat[0]==-1)||(outlat[1]==-1)||(outlat[2]==-1)||(outlat[3]==-1),1,
-                "source_pos [parallel_out.c]","Output lattice not set");
+    int is_unique=0,attempt=0,max_attempts=100;
 
     if (my_rank==0)
     {
-        ranlxd(rand,4);
-
-        if (pos==0)
+        if (bcon==0)
         {
-            if (bcon==0)
+            for (i=0;i<nsrcs;i++)
             {
-                if (x0<0)
-                    src_coords[0]=(N0-outlat[0])/2;
-                else
-                    src_coords[0]=x0;
+                while (!is_unique)
+                {
+                    attempt++;
+                    error_root(attempt>max_attempts,1,
+                            "set_srcs [rotation.c]",
+                            "Too many attempts to find unique source coordinates");
+
+                    ranlxd(rand,4);
+                    srcs[4*i+0]=N0/2;
+                    srcs[4*i+1]=(int)(rand[1]*N1);
+                    srcs[4*i+2]=(int)(rand[2]*N2);
+                    srcs[4*i+3]=(int)(rand[3]*N3);
+                    
+                    is_unique=1;
+                    for (j=0;j<i;j++)
+                    {
+                        if ((srcs[4*i+1]==srcs[4*j+1])&&
+                            (srcs[4*i+2]==srcs[4*j+2])&&
+                            (srcs[4*i+3]==srcs[4*j+3]))
+                        {
+                            is_unique=0;
+                            break;
+                        }
+                    }
+                }
             }
-            else if (bcon==3)
+        }
+        else if (bcon==3)
+        {
+            for (i=0;i<nsrcs;i++)
             {
-                src_coords[0]=(int)(rand[0]*N0);
-            }
-            else
-            {
-                error_root(1,1,"source_pos [parallel_out.c]",
-                            "Unknown or unsupported boundary condition");
+                while (!is_unique)
+                {
+                    attempt++;
+                    error_root(attempt>max_attempts,1,
+                            "set_srcs [rotation.c]",
+                            "Too many attempts to find unique source coordinates");
+
+                    ranlxd(rand,4);
+                    srcs[4*i+0]=(int)(rand[0]*N0);
+                    srcs[4*i+1]=(int)(rand[1]*N1);
+                    srcs[4*i+2]=(int)(rand[2]*N2);
+                    srcs[4*i+3]=(int)(rand[3]*N3);
+                    
+                    is_unique=1;
+                    for (j=0;j<i;j++)
+                    {
+                        if ((srcs[4*i+0]==srcs[4*j+0])&&
+                            (srcs[4*i+1]==srcs[4*j+1])&&
+                            (srcs[4*i+2]==srcs[4*j+2])&&
+                            (srcs[4*i+3]==srcs[4*j+3]))
+                        {
+                            is_unique=0;
+                            break;
+                        }
+                    }
+                }
             }
         }
         else
         {
-            if (bcon==0)
-            {
-                if (x0<0)
-                    src_coords[0]=(N0-1)/2;
-                else
-                    src_coords[0]=x0;
-            }
-            else if (bcon==3)
-            {
-                src_coords[0]=(int)(rand[0]*N0);
-            }
-            else
-            {
-                error_root(1,1,"source_pos [parallel_out.c]",
-                            "Unknown or unsupported boundary condition");
-            }
+            error_root(1,1,"source_pos [parallel_out.c]",
+                        "Unknown or unsupported boundary condition");
         }
-        src_coords[1]=(int)(rand[1]*N1);
-        src_coords[2]=(int)(rand[2]*N2);
-        src_coords[3]=(int)(rand[3]*N3);
     }
-    err_count=MPI_Bcast(src_coords,4,MPI_INT,0,MPI_COMM_WORLD);
-    error(err_count!=MPI_SUCCESS,1,"source_pos [parallel_out.c]",
+    err_count=MPI_Bcast(srcs,4*nsrcs,MPI_INT,0,MPI_COMM_WORLD);
+    error(err_count!=MPI_SUCCESS,1,"set_srcs [rotation.c]",
             "Failed to broadcast source coordinates");
 }
 
@@ -1469,7 +1383,6 @@ static void solve_dirac(int prop, spinor_dble *eta, spinor_dble *psi,
 }
 
 
-
 static void add_tmp_to_corr(void)
 {
     int i,ipcorr;
@@ -1487,25 +1400,40 @@ static void add_tmp_to_corr(void)
 }
 
 
+static void divide_corr(void)
+{
+    int i;
+    double norm=(double)nsrcs;
+    for (i=0;i<npcorr*VOLUME;i++)
+    {
+        data.corr[i].re/=norm;
+        data.corr[i].im/=norm;
+    }
+}
+
+
 static void point_correlators(void)
 {
-    int i,iy,ix0,iprop,ipcorr,cc,stat[6],src_coords[4];
+    int i,iy,isrc,iprop,ipcorr,cc,stat[6],src_coords[4];
+    int shift_vec[4];
     spinor_dble *source,*sink,**solution,**wsd;
     complex_dble factor={0.0,0.0};
     complex_qflt tmp;
 
-    wsd=reserve_wsd(12*proplist.nmax+2);
+    /* Reserve working space */
+    wsd=reserve_wsd(12*ninverse+2);
     error(wsd==NULL,1,"point_correlators [rotation.c]",
             "Unable to reserve working space");
     source=wsd[0];
     sink=wsd[1];
-    solution=malloc(12*proplist.nmax*sizeof(spinor_dble*));
+    solution=malloc(12*ninverse*sizeof(spinor_dble*));
     error(solution==NULL,1,"point_correlators [rotation.c]",
             "Unable to allocate solution array");
 
-    for (i=0;i<12*proplist.nmax;i++)
+    for (i=0;i<12*ninverse;i++)
         solution[i]=wsd[i+2];
 
+    /* Initialize correlators */
     for (i=0;i<npcorr*VOLUME;i++)
     {
         data.corr[i].re=0.0;
@@ -1514,93 +1442,108 @@ static void point_correlators(void)
         data.corr_tmp[i].im=0.0;
     }
 
-    for (ix0=0;ix0<proplist.nux0;ix0++)
+    /* Set source coordinates */
+    set_srcs();
+
+    for (isrc=0;isrc<nsrcs;isrc++)
     {
-        /* calculate all solutions with ix0=proplist.ux0[ix0] */
-        source_pos(proplist.ux0[ix0],src_coords);
         if (my_rank==0)    
             printf("Calculating all 12 Dirac inversions at source position [%d, %d, %d, %d] ...\n",
-                    src_coords[0],src_coords[1],src_coords[2],src_coords[3]);
-        for (iprop=0;iprop<proplist.nuprop[ix0];iprop++)
+                    srcs[4*isrc+0],srcs[4*isrc+1],srcs[4*isrc+2],srcs[4*isrc+3]);
+
+        /* Calculate all 12 Dirac inversions for given source position */
+        for (iprop=0;iprop<nprop;iprop++)
         {
             if (my_rank==0)
-                printf("... and propagator %d.\nNo   Status\n",proplist.uprop[ix0][iprop]);
+                printf("... and propagator %d.\nNo   Status\n",iprop);
             for (cc=0;cc<12;cc++)
             {
-                point_source(source,src_coords,cc);
+                point_source(source,srcs+4*isrc,cc);
                 if (my_rank==0)
                     printf("%2d   ",(cc+1));
                 MPI_Barrier(MPI_COMM_WORLD);
-                solve_dirac(proplist.uprop[ix0][iprop],source,solution[12*iprop+cc],stat);
+                solve_dirac(iprop,source,solution[isrc*nprop*12+iprop*12+cc],stat);
                 if (my_rank==0)
                     fflush(stdout);
             }
         }
+
+        /* Calculate correlators for given source position */
         for (ipcorr=0;ipcorr<npcorr;ipcorr++)
         {
-            if (x0s[ipcorr]==proplist.ux0[ix0])
-            {
-                for (i=0;i<4;i++)
-                    srcs[4*ipcorr+i]=src_coords[i];
-
-                for (cc=0;cc<12;cc++)
-                {   
-                    make_source(solution[12*proplist.uprop_index[ix0][props1[ipcorr]]+cc],
-                                type1[ipcorr],source);
-                    make_sink(solution[12*proplist.uprop_index[ix0][props2[ipcorr]]
-                                        +choose_cc(type2[ipcorr],cc,&factor)],sink);
-                    if ((factor.re == 1.0)&&(factor.im == 0.0))
+            for (cc=0;cc<12;cc++)
+            {   
+                make_source(solution[isrc*nprop*12+props1[ipcorr]*12+cc],
+                            type1[ipcorr],source);
+                make_sink(solution[isrc*nprop*12+props1[ipcorr]*12
+                                    +choose_cc(type2[ipcorr],cc,&factor)],sink);
+                if ((factor.re == 1.0)&&(factor.im == 0.0))
+                {
+                    for (i=0;i<VOLUME;i++)
                     {
-                        for (i=0;i<VOLUME;i++)
-                        {
-                            iy=ipt[i];
-                            tmp=spinor_prod_dble(1,0,sink+iy,source+iy);
-                            data.corr[ipcorr*VOLUME+i].re+=tmp.re.q[0];
-                            data.corr[ipcorr*VOLUME+i].im+=tmp.im.q[0];
-                        }
+                        iy=ipt[i];
+                        tmp=spinor_prod_dble(1,0,sink+iy,source+iy);
+                        data.corr_tmp[ipcorr*VOLUME+i].re+=tmp.re.q[0];
+                        data.corr_tmp[ipcorr*VOLUME+i].im+=tmp.im.q[0];
                     }
-                    else if ((factor.re == -1.0)&&(factor.im == 0.0))
+                }
+                else if ((factor.re == -1.0)&&(factor.im == 0.0))
+                {
+                    for (i=0;i<VOLUME;i++)
                     {
-                        for (i=0;i<VOLUME;i++)
-                        {
-                            iy=ipt[i];
-                            tmp=spinor_prod_dble(1,0,sink+iy,source+iy);
-                            data.corr[ipcorr*VOLUME+i].re-=tmp.re.q[0];
-                            data.corr[ipcorr*VOLUME+i].im-=tmp.im.q[0];
-                        }
+                        iy=ipt[i];
+                        tmp=spinor_prod_dble(1,0,sink+iy,source+iy);
+                        data.corr_tmp[ipcorr*VOLUME+i].re-=tmp.re.q[0];
+                        data.corr_tmp[ipcorr*VOLUME+i].im-=tmp.im.q[0];
                     }
-                    /* factors of +i and -i get an extra minus sign
-                       due to complex conjugation of first element
-                       in complex scalar product */
-                    else if ((factor.re == 0.0)&&(factor.im == 1.0))
+                }
+                /* factors of +i and -i get an extra minus sign
+                    due to complex conjugation of first element
+                    in complex scalar product */
+                else if ((factor.re == 0.0)&&(factor.im == 1.0))
+                {
+                    for (i=0;i<VOLUME;i++)
                     {
-                        for (i=0;i<VOLUME;i++)
-                        {
-                            iy=ipt[i];
-                            tmp=spinor_prod_dble(1,0,sink+iy,source+iy);
-                            data.corr[ipcorr*VOLUME+i].re+=tmp.im.q[0];
-                            data.corr[ipcorr*VOLUME+i].im-=tmp.re.q[0];
-                        }
+                        iy=ipt[i];
+                        tmp=spinor_prod_dble(1,0,sink+iy,source+iy);
+                        data.corr_tmp[ipcorr*VOLUME+i].re+=tmp.im.q[0];
+                        data.corr_tmp[ipcorr*VOLUME+i].im-=tmp.re.q[0];
                     }
-                    else if ((factor.re == 0.0)&&(factor.im == -1.0))
+                }
+                else if ((factor.re == 0.0)&&(factor.im == -1.0))
+                {
+                    for (i=0;i<VOLUME;i++)
                     {
-                        for (i=0;i<VOLUME;i++)
-                        {
-                            iy=ipt[i];
-                            tmp=spinor_prod_dble(1,0,sink+iy,source+iy);
-                            data.corr[ipcorr*VOLUME+i].re-=tmp.im.q[0];
-                            data.corr[ipcorr*VOLUME+i].im+=tmp.re.q[0];
-                        }
+                        iy=ipt[i];
+                        tmp=spinor_prod_dble(1,0,sink+iy,source+iy);
+                        data.corr_tmp[ipcorr*VOLUME+i].re-=tmp.im.q[0];
+                        data.corr_tmp[ipcorr*VOLUME+i].im+=tmp.re.q[0];
                     }
-                    else
-                    {
-                        error(1,1,"point_correlators [rotation.c]",
-                                "Unknown or unsupported factor");
-                    }
+                }
+                else
+                {
+                    error(1,1,"point_correlators [rotation.c]",
+                            "Unknown or unsupported factor");
                 }
             }
         }
+
+        /* Shift source to origin */
+        shift_vec[0]=-srcs[4*isrc+0];
+        shift_vec[1]=-srcs[4*isrc+1];
+        shift_vec[2]=-srcs[4*isrc+2];
+        shift_vec[3]=-srcs[4*isrc+3];
+        shift_corr(data.corr_tmp,shift_vec);
+
+        /* Add data.corr_tmp to data.corr */
+        add_tmp_to_corr();
     }
+
+    /* Divide correlators by number of sources */
+    divide_corr();
+
+    /* Cleanup */
+    cleanup_shift();
     free(solution);
     release_wsd();
 }

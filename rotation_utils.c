@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <math.h>
 #include "global.h" /* for NPROC0, NPROC1, NPROC2, NPROC3, L0, L1, L2, L3, VOLUME, ipt[] */
+#include "lattice.h" /* for ipr_global */
 #include "mpi.h"
 #include "rotation.h"
 #include "utils.h" /* for error, error_root */
