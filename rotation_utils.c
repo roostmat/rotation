@@ -5,6 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include "global.h" /* for NPROC0, NPROC1, NPROC2, NPROC3, L0, L1, L2, L3, VOLUME, ipt[] */
 #include "mpi.h"
 #include "rotation.h"
 #include "utils.h" /* for error, error_root */
@@ -13,6 +14,33 @@
 
 static int data_parms_set=0;
 static corr_data_parms_t data_parms={{0,0,0,0},0,0};
+
+
+
+void lex_global(int *x,int *ip,int *ix)
+{
+   int x0,x1,x2,x3;
+   int n[4];
+
+   x0=safe_mod(x[0],NPROC0*L0);
+   x1=safe_mod(x[1],NPROC1*L1);
+   x2=safe_mod(x[2],NPROC2*L2);
+   x3=safe_mod(x[3],NPROC3*L3);
+
+   n[0]=x0/L0;
+   n[1]=x1/L1;
+   n[2]=x2/L2;
+   n[3]=x3/L3;
+
+   (*ip)=ipr_global(n);
+
+   x0=x0%L0;
+   x1=x1%L1;
+   x2=x2%L2;
+   x3=x3%L3;
+
+   (*ix)=x3+x2*L3+x1*L2*L3+x0*L1*L2*L3;
+}
 
 
 

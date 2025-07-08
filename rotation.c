@@ -1480,12 +1480,9 @@ static void add_tmp_to_corr(void)
         {
             data.corr[ipcorr*VOLUME+i].re+=data.corr_tmp[ipcorr*VOLUME+i].re;
             data.corr[ipcorr*VOLUME+i].im+=data.corr_tmp[ipcorr*VOLUME+i].im;
+            data.corr_tmp[ipcorr*VOLUME+i].re=0.0; /* Wipe temporary buffer*/
+            data.corr_tmp[ipcorr*VOLUME+i].im=0.0;
         }
-    }
-    for (i=0;i<npcorr*VOLUME;i++)
-    {
-        data.corr_tmp[i].re=0.0;
-        data.corr_tmp[i].im=0.0;
     }
 }
 

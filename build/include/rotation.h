@@ -42,6 +42,7 @@ extern void copy_corr_data(complex_dble *dest); */
 
 
 /* ROTATION_UTIL_C*/
+extern void lex_global(int *x,int *ip,int *ix);
 extern void create_MPI_COMPLEX_DOUBLE(MPI_Datatype *mpi_complex_double);
 extern void free_MPI_COMPLEX_DOUBLE(MPI_Datatype *mpi_complex_double);
 extern void set_corr_data_parms(int outlat[4], int npcorr);
@@ -58,7 +59,6 @@ extern void cleanup_shift(void);
 
 
 /* PARALLEL_OUT_C */
-extern void lex_global(int *x,int *ip,int *ix);
 extern void set_up_parallel_out(void);
 extern void parallel_write(char *filename,corr_data_t *data,int *srcs);
 
