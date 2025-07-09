@@ -38,14 +38,14 @@ static int shift_vec[4]={0,0,0,0},npcorr=-1;
 
 
 
-int global_index(int *coords)
+static int global_index(int *coords)
 {
     return coords[0]*N1*N2*N3+coords[1]*N2*N3+coords[2]*N3+coords[3];
 }
 
 
 
-void setup_lattices(void)
+static void setup_lattices(void)
 {
     int t,x,y,z,n,i,index,shifted_index;
     int global_coords[DIM],shifted_global_coords[DIM];
@@ -96,7 +96,7 @@ void setup_lattices(void)
 
 
 
-void compare_lattices(void)
+static void compare_lattices(void)
 {
     int i,errors=0,total_errors=0;
 
@@ -125,7 +125,7 @@ void compare_lattices(void)
 
 
 
-void print_corr_slice(complex_dble *corr_array,int y_slice,int z_slice,int correlator,const char *array_name)
+static void print_corr_slice(complex_dble *corr_array,int y_slice,int z_slice,int correlator,const char *array_name)
 {
     int t,x,i;
     int global_coords[DIM];
@@ -198,16 +198,6 @@ void print_corr_slice(complex_dble *corr_array,int y_slice,int z_slice,int corre
 
 
 
-void check_cpr(void)
-{
-    int rank;
-    rank=ipr_global(cpr);
-    error(rank!=my_rank,1,"check_cpr [shift.c]",
-          "cpr does not match my_rank. Check lattice setup.");
-}
-
-
-
 int main(int argc,char *argv[])
 {
     MPI_Init(&argc,&argv);
@@ -260,8 +250,6 @@ int main(int argc,char *argv[])
     /* Set up lattice geometry */
     geometry();
     setup_lattices();
-
-    check_cpr();
 
     print_corr_slice(corr,0,0,1,"Original Lattice");
     print_corr_slice(corr_shifted,0,0,1,"Control Lattice");

@@ -18,6 +18,9 @@ static corr_data_parms_t data_parms={{0,0,0,0},0,0};
 
 
 
+/* Rank and index functions */
+
+/* Get rank and local index from global coords */
 void lex_global(int *x,int *ip,int *ix)
 {
    int x0,x1,x2,x3;
@@ -44,7 +47,26 @@ void lex_global(int *x,int *ip,int *ix)
 }
 
 
+/* Get rank from lexicographical rank index */
+int lex_rank_to_ipr_global(int lex_rank)
+{
+    int rank_coords[4],rank;
 
+    error((lex_rank<0)||(lex_rank>=NPROC),1,"lex_rank_to_ipr_global [rotation_utils.c]",
+            "lex_rank %d is out of bounds [0, %d)", lex_rank, NPROC);
+
+    rank_coords[0]=lex_rank/(NPROC1*NPROC2*NPROC3);
+    rank_coords[1]=(lex_rank/(NPROC2*NPROC3))%NPROC1;
+    rank_coords[2]=(lex_rank/NPROC3)%NPROC2;
+    rank_coords[3]=lex_rank%NPROC3;
+
+    rank=ipr_global(rank_coords);
+    return rank;
+}
+
+
+
+/* Create MPI data type for complex_dble */
 void create_MPI_COMPLEX_DOUBLE(MPI_Datatype *mpi_complex_double)
 {
     int err_count=0;
@@ -66,6 +88,7 @@ void free_MPI_COMPLEX_DOUBLE(MPI_Datatype *mpi_complex_double)
 
 
 
+/* Set correlation data parameters */
 void set_corr_data_parms(int outlat[4], int npcorr)
 {
     data_parms.outlat[0] = outlat[0];
@@ -103,4 +126,51 @@ int get_npcorr(void)
     error(!data_parms_set,1,"get_npcorr [rotation_utils.c]",
             "Data parameters not set. Call set_corr_data_parms first.");
     return data_parms.npcorr;
+}
+
+
+
+/* Argsort function */
+static int compare(const void *a,const void *b)
+{
+    IndexedValue_t *ia=(IndexedValue_t *)a;
+    IndexedValue_t *ib=(IndexedValue_t *)b;
+    return ia->value-ib->value;
+}
+
+
+
+void get_sorted_indices(int *array,int *indices,int length)
+{
+    int i;
+    IndexedValue_t *iv=malloc(length*sizeof(IndexedValue_t));
+
+    for (i=0;i<length;i++)
+    {
+        iv[i].value=array[i];
+        iv[i].index=i;
+    }
+    
+    qsort(iv,length,sizeof(IndexedValue_t),compare);
+    for (i=0;i<length;i++)
+    {
+        indices[i]=iv[i].index;
+    }
+    
+    free(iv);
+}
+
+
+
+void sort_array_from_indices(int *array, int *indices, int length)
+{
+    int i,tmp[length];
+    for (i=0;i<length;i++)
+    {
+        tmp[i]=array[indices[i]];
+    }
+    for (i=0;i<length;i++)
+    {
+        array[i]=tmp[i];
+    }
 }

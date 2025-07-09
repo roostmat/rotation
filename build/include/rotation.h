@@ -28,6 +28,11 @@ typedef struct
     int npcorr;                      /* number of point correlators */
 } corr_data_parms_t;
 
+typedef struct {
+    int value;
+    int index;
+} IndexedValue_t;
+
 
 
 
@@ -49,6 +54,9 @@ extern void set_corr_data_parms(int outlat[4], int npcorr);
 extern void get_outlat(int outlat[4]);
 extern int get_size(void);
 extern int get_npcorr(void);
+extern void get_sorted_indices(int *array,int *indices,int length);
+extern void sort_array_from_indices(int *array, int *indices, int length);
+extern int lex_rank_to_ipr_global(int lex_rank);
 
 
 
