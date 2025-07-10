@@ -63,7 +63,8 @@ extern int lex_rank_to_ipr_global(int lex_rank);
 /* SHIFT_C */
 extern void shift_corr(complex_dble *corr,int *shift_vec);
 extern void cleanup_shift(void);
-extern void average_equiv(complex_dble *corr,int outlat[4]);
+extern void average_equiv(complex_dble *corr,int outlat[4],int bc);
+extern void average_equiv2(complex_dble *corr);
 
 
 

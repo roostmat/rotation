@@ -19,7 +19,7 @@ all: rmxeq mkdep mkxeq
 
 # main programs and modules to be compiled
 
-MAIN = rotation parallel_out_test shift_corr_test
+MAIN = rotation parallel_out_test shift_corr_test average_test
 
 ARCHIVE = archive iodat marchive sarchive
 

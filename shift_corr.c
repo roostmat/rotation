@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <math.h>
 #include "endian.h" /* for endianness */
+#include "flags.h" /* bc_type() */
 #include "global.h" /* for NPROC0, NPROC1, NPROC2, NPROC3, L0, L1, L2, L3, VOLUME, ipt[] */
 #include "lattice.h" /* for ipr_global */
 #include "mpi.h"
@@ -331,8 +332,8 @@ void shift_corr(complex_dble *corr,int *shift_vec)
 
 static void average_2points(complex_dble *corr,int coords1[DIM],int coords2[DIM])
 {
-    int index1,index2;
-    int rank1,rank2;
+    int ipcorr,index1,index2,rank1,rank2;
+    int my_index,partner_index,partner_rank;
     complex_dble received_value;
     int err_count=0;
 
@@ -341,121 +342,85 @@ static void average_2points(complex_dble *corr,int coords1[DIM],int coords2[DIM]
 
     if ((rank1==my_rank)&&(rank2==my_rank))
     {
-        /* Both points are on the same process */
-        corr[index1].re=0.5*(corr[index1].re + corr[index2].re);
-        corr[index1].im=0.5*(corr[index1].im + corr[index2].im);
-        corr[index2].re=corr[index1].re;
-        corr[index2].im=corr[index1].im;
+        for (ipcorr=0;ipcorr<npcorr;ipcorr++)
+        {
+            /* Both points are on the same process */
+            corr[ipcorr*VOLUME+index1].re=0.5*(corr[ipcorr*VOLUME+index1].re+corr[ipcorr*VOLUME+index2].re);
+            corr[ipcorr*VOLUME+index1].im=0.5*(corr[ipcorr*VOLUME+index1].im+corr[ipcorr*VOLUME+index2].im);
+            corr[ipcorr*VOLUME+index2].re=corr[ipcorr*VOLUME+index1].re;
+            corr[ipcorr*VOLUME+index2].im=corr[ipcorr*VOLUME+index1].im;
+        }
     }
-    else if (rank1==my_rank)
+    else if ((rank1==my_rank)||(rank2==my_rank))
     {
-        err_count=MPI_Sendrecv(corr+index1,1,MPI_COMPLEX_DOUBLE,
-                                rank2,index1,
-                                &received_value,1,MPI_COMPLEX_DOUBLE,
-                                rank2,index2,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-        error(err_count!=MPI_SUCCESS,1,"average_2points [shift_corr.c]",
-                "Failed to send/receive data for averaging points (%d,%d,%d,%d) and (%d,%d,%d,%d)",
-                coords1[0],coords1[1],coords1[2],coords1[3],
-                coords2[0],coords2[1],coords2[2],coords2[3]);
-        corr[index1].re=0.5*(corr[index1].re + received_value.re);
-        corr[index1].im=0.5*(corr[index1].im + received_value.im);
-    }
-    else if (rank2==my_rank)
-    {
-        err_count=MPI_Sendrecv(corr+index2,1,MPI_COMPLEX_DOUBLE,
-                                rank1,index2,
-                                &received_value,1,MPI_COMPLEX_DOUBLE,
-                                rank1,index1,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
-        error(err_count!=MPI_SUCCESS,1,"average_2points [shift_corr.c]",
-                "Failed to send/receive data for averaging points (%d,%d,%d,%d) and (%d,%d,%d,%d)",
-                coords1[0],coords1[1],coords1[2],coords1[3],
-                coords2[0],coords2[1],coords2[2],coords2[3]);
-        corr[index2].re=0.5*(corr[index2].re + received_value.re);
-        corr[index2].im=0.5*(corr[index2].im + received_value.im);
+        my_index=(rank1==my_rank)?index1:index2;
+        partner_index=(rank1==my_rank)?index2:index1;
+        partner_rank=(rank1==my_rank)?rank2:rank1;
+
+        for (ipcorr=0;ipcorr<npcorr;ipcorr++)
+        {
+            err_count=MPI_Sendrecv(corr+ipcorr*VOLUME+my_index,1,MPI_COMPLEX_DOUBLE,
+                                    partner_rank,ipcorr*VOLUME+my_index,
+                                    &received_value,1,MPI_COMPLEX_DOUBLE,
+                                    partner_rank,ipcorr*VOLUME+partner_index,MPI_COMM_WORLD,MPI_STATUS_IGNORE);
+            error_loc(err_count!=MPI_SUCCESS,1,"average_2points [shift_corr.c]",
+                    "Failed to send/receive data for averaging points (%d,%d,%d,%d) and (%d,%d,%d,%d)",
+                    coords1[0],coords1[1],coords1[2],coords1[3],
+                    coords2[0],coords2[1],coords2[2],coords2[3]);
+
+            corr[ipcorr*VOLUME+my_index].re=0.5*(corr[ipcorr*VOLUME+my_index].re + received_value.re);
+            corr[ipcorr*VOLUME+my_index].im=0.5*(corr[ipcorr*VOLUME+my_index].im + received_value.im);
+        }
     }
 }
 
 
 
-void average_equiv(complex_dble *corr,int outlat[4])
+void average_equiv(complex_dble *corr,int outlat[4],int bc)
 {
-    int t,x,y,z,i,j;
+    int index1,index2;
     int coords1[DIM],coords2[DIM];
-    int small_volume;
+    int err_count=0;
 
-    /* Average on-axis */
-    coords1[1]=0;
-    coords1[2]=0;
-    coords1[3]=0;
-    coords2[1]=0;
-    coords2[2]=0;
-    coords2[3]=0;
-    for (t=1;t<((outlat[0])<((N0+1)/2)?(outlat[0]):((N0+1)/2));t++)
+    create_MPI_COMPLEX_DOUBLE(&MPI_COMPLEX_DOUBLE);
+    err_count=MPI_Comm_rank(MPI_COMM_WORLD,&my_rank);
+    error(err_count!=MPI_SUCCESS,err_count,"setup_shift [shift_corr.c]",
+                "Failed to get rank of current process");
+    npcorr=get_npcorr();
+
+    for (index1=1;index1<N0*N1*N2*N3;index1++)
     {
-        coords1[0]=t;
-        coords2[0]=N0-t;
-        average_2points(corr,coords1,coords2);
-    }
+        coords1[0]=index1/(N1*N2*N3);
+        coords1[1]=(index1/(N2*N3))%N1;
+        coords1[2]=(index1/N3)%N2;
+        coords1[3]=index1%N3;
 
-    coords1[0]=0;
-    coords1[2]=0;
-    coords1[3]=0;
-    coords2[0]=0;
-    coords2[2]=0;
-    coords2[3]=0;
-    for (x=1;x<((outlat[1])<((N1+1)/2)?(outlat[1]):((N1+1)/2));x++)
-    {
-        coords1[1]=x;
-        coords2[1]=N1-x;
-        average_2points(corr,coords1,coords2);
-    }
-
-    coords1[0]=0;
-    coords1[1]=0;
-    coords1[3]=0;
-    coords2[0]=0;
-    coords2[1]=0;
-    coords2[3]=0;
-    for (y=1;y<((outlat[2])<((N2+1)/2)?(outlat[2]):((N2+1)/2));y++)
-    {
-        coords1[2]=y;
-        coords2[2]=N2-y;
-        average_2points(corr,coords1,coords2);
-    }
-
-    coords1[0]=0;
-    coords1[1]=0;
-    coords1[2]=0;
-    coords2[0]=0;
-    coords2[1]=0;
-    coords2[2]=0;
-    for (z=1;z<((outlat[3])<((N3+1)/2)?(outlat[3]):((N3+1)/2));z++)
-    {
-        coords1[3]=z;
-        coords2[3]=N3-z;
-        average_2points(corr,coords1,coords2);
-    }
-
-    /* Average off-axis */
-    small_volume=(N0-1)*(N1-1)*(N2-1)*(N3-1);
-
-    for (i=0;i<small_volume;i++)
-    {
-        j=small_volume-1-i;
-        coords1[0]=i/((N1-1)*(N2-1)*(N3-1))+1;
-        coords1[1]=(i/((N2-1)*(N3-1)))%((N1-1))+1;
-        coords1[2]=(i/((N3-1)))%((N2-1))+1;
-        coords1[3]=i%((N3-1))+1;
-        coords2[0]=j/((N1-1)*(N2-1)*(N3-1))+1;
-        coords2[1]=(j/((N2-1)*(N3-1)))%((N1-1))+1;
-        coords2[2]=(j/((N3-1)))%((N2-1))+1;
-        coords2[3]=j%((N3-1))+1;
-
-        if (((coords1[0]<outlat[0])&&(coords1[1]<outlat[1])&&
-             (coords1[2]<outlat[2])&&(coords1[3]<outlat[3]))||
-            ((coords2[0]<outlat[0])&&(coords2[1]<outlat[1])&&
-             (coords2[2]<outlat[2])&&(coords2[3]<outlat[3])))
+        if (bc==0)
         {
+            coords2[0]=coords1[0];
+        }
+        else if (bc==3)
+        {
+            coords2[0]=(N0-coords1[0])%N0;
+        }
+        else
+        {
+            error_root(1,1,"average_equiv [shift_corr.c]",
+                    "Unsupported boundary condition %d",bc);
+        }
+        coords2[1]=(N1-coords1[1])%N1;
+        coords2[2]=(N2-coords1[2])%N2;
+        coords2[3]=(N3-coords1[3])%N3;
+
+        index2=coords2[0]*N1*N2*N3+coords2[1]*N2*N3+coords2[2]*N3+coords2[3];
+
+        if ((index1<index2)&&
+            (((coords1[0]<outlat[0])&&(coords1[1]<outlat[1])&&
+            (coords1[2]<outlat[2])&&(coords1[3]<outlat[3]))||
+            ((coords2[0]<outlat[0])&&(coords2[1]<outlat[1])&&
+            (coords2[2]<outlat[2])&&(coords2[3]<outlat[3]))))
+        {
+            /* Average the two points */
             average_2points(corr,coords1,coords2);
         }
     }
@@ -471,11 +436,14 @@ void average_equiv(complex_dble *corr,int outlat[4])
  *************************************************************/
 void average_equiv2(complex_dble *corr)
 {
-    int i,j;
+    int i,j,ipcorr;
     int coords[DIM],bc;
     int dest[VOLUME],partner[VOLUME],partner_index,partner_rank;
+
+    int dest_max[VOLUME];
+
     int send_receive_rank[NPROC],rank_index[NPROC];
-    int nsend=0,*send_count,*dest_source_rank;
+    int nsend=0,*send_count,*send_max,*dest_source_rank;
     int **my_index,**remote_index,**sort_index;
     complex_dble **send_buffer,**receive_buffer;
     MPI_Request *requests;
@@ -490,6 +458,9 @@ void average_equiv2(complex_dble *corr)
 
     /* Get boundary conditions */
     bc=bc_type();
+
+    /* Get number of correlators */
+    npcorr=get_npcorr();
 
     /* Initialize dest and partner array to -1 */
     for (i=0;i<VOLUME;i++)
@@ -520,7 +491,7 @@ void average_equiv2(complex_dble *corr)
             }
             else
             {
-                error_root(1,"average_equiv2 [shift_corr.c]",
+                error_root(1,1,"average_equiv2 [shift_corr.c]",
                         "Unsupported boundary condition %d", bc);
             }
             coords[1]=safe_mod(-(cpr[1]*L1+(i/(L2*L3))%L1),N1);
@@ -547,6 +518,18 @@ void average_equiv2(complex_dble *corr)
             }
         }
     }
+    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Allreduce(dest,dest_max,VOLUME,MPI_INT,MPI_MAX,MPI_COMM_WORLD);
+    if (my_rank==0)
+    {
+        for (i=0;i<VOLUME;i++)
+        {
+            printf("dest_max[%d]=%d\n", i, dest_max[i]);
+        }
+        fflush(stdout);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+
     if (nsend>0)
     {
         /* Allocate buffers and index arrays */
@@ -571,6 +554,9 @@ void average_equiv2(complex_dble *corr)
         send_count=malloc(nsend*sizeof(int));
         error(send_count==NULL,1,"average_equiv2 [shift_corr.c]",
                 "Failed to allocate send_count array");
+        send_max=malloc(nsend*sizeof(int));
+        error(send_max==NULL,1,"average_equiv2 [shift_corr.c]",
+                "Failed to allocate send_max array");
         requests=malloc(2*nsend*sizeof(MPI_Request));
         error(requests==NULL,1,"average_equiv2 [shift_corr.c]",
                 "Failed to allocate requests array");
@@ -582,10 +568,10 @@ void average_equiv2(complex_dble *corr)
                     "More send_receive_rank entries than nsend (%d > %d)", j, nsend);
             if (send_receive_rank[i]>0)
             {
-                send_buffer[j]=malloc(send_receive_rank[i]*sizeof(complex_dble));
+                send_buffer[j]=malloc(send_receive_rank[i]*npcorr*sizeof(complex_dble));
                 error(send_buffer[j]==NULL,1,"average_equiv2 [shift_corr.c]",
                         "Failed to allocate send_buffer[%d] array", i);
-                receive_buffer[j]=malloc(send_receive_rank[i]*sizeof(complex_dble));
+                receive_buffer[j]=malloc(send_receive_rank[i]*npcorr*sizeof(complex_dble));
                 error(receive_buffer[j]==NULL,1,"average_equiv2 [shift_corr.c]",
                         "Failed to allocate receive_buffer[%d] array", i);
                 my_index[j]=malloc(send_receive_rank[i]*sizeof(int));
@@ -598,6 +584,7 @@ void average_equiv2(complex_dble *corr)
                 error(sort_index[j]==NULL,1,"average_equiv2 [shift_corr.c]",
                         "Failed to allocate sort_index[%d] array", i);
                 send_count[j]=0;
+                send_max[j]=send_receive_rank[i];
                 /* Store index of given rank */
                 rank_index[i]=j;
                 /* Convert dest_source_rank from lexicographical to ipr_global */
@@ -617,35 +604,49 @@ void average_equiv2(complex_dble *corr)
                 if ((dest[i]==my_rank)&&(i<partner[i]))
                 {
                     /* Perform local averaging */
-                    corr[i].re=0.5*(corr[i].re + corr[partner[i]].re);
-                    corr[i].im=0.5*(corr[i].im + corr[partner[i]].im);
-                    corr[partner[i]].re=corr[i].re;
-                    corr[partner[i]].im=corr[i].im;
+                    for (ipcorr=0;ipcorr<npcorr;ipcorr++)
+                    {
+                        corr[ipcorr*VOLUME+i].re=0.5*(corr[ipcorr*VOLUME+i].re + corr[ipcorr*VOLUME+partner[i]].re);
+                        corr[ipcorr*VOLUME+i].im=0.5*(corr[ipcorr*VOLUME+i].im + corr[ipcorr*VOLUME+partner[i]].im);
+                        corr[ipcorr*VOLUME+partner[i]].re=corr[ipcorr*VOLUME+i].re;
+                        corr[ipcorr*VOLUME+partner[i]].im=corr[ipcorr*VOLUME+i].im;
+                    }
                 }
                 else if (dest[i]!=my_rank)
                 {
                     /* Fill send buffer */
                     error(rank_index[dest[i]]==-1,1,"average_equiv2 [shift_corr.c]",
                             "Rank %d not found in rank_index array", dest[i]);
-
-                    send_buffer[rank_index[dest[i]]][send_count[rank_index[dest[i]]]]=corr[i];
-                    my_index[rank_index[dest[i]]][send_count[rank_index[dest[i]]]]=i;
-                    remote_index[rank_index[dest[i]]][send_count[rank_index[dest[i]]]]=partner[i];
-                    send_count[rank_index[dest[i]]]++;
+                    j=rank_index[dest[i]];
+                    for (ipcorr=0;ipcorr<npcorr;ipcorr++)
+                    {
+                        send_buffer[j][ipcorr*send_max[j]+send_count[j]]=corr[ipcorr*VOLUME+i];
+                    }
+                    my_index[j][send_count[j]]=i;
+                    remote_index[j][send_count[j]]=partner[i];
+                    send_count[j]++;
                 }
             }
+        }
+
+        /* Check send counts */
+        for (i=0;i<nsend;i++)
+        {
+            error(send_count[i]!=send_max[i],1,"average_equiv2 [shift_corr.c]",
+                    "Send count for rank %d is %d, expected %d", dest_source_rank[i],
+                    send_count[i],send_max[i]);
         }
 
         /* Exchange data */
         MPI_Barrier(MPI_COMM_WORLD);
         for (i=0;i<nsend;i++)
         {
-            err_count=MPI_Irecv(receive_buffer[i],send_count[i],MPI_COMPLEX_DOUBLE,
+            err_count=MPI_Irecv(receive_buffer[i],send_max[i]*npcorr,MPI_COMPLEX_DOUBLE,
                                 dest_source_rank[i],my_rank,MPI_COMM_WORLD,&requests[i]);
             error(err_count!=MPI_SUCCESS,1,"average_equiv2 [shift_corr.c]",
                     "Failed to post Irecv for averaging points from rank %d", dest_source_rank[i]);
 
-            err_count=MPI_Isend(send_buffer[i],send_count[i],MPI_COMPLEX_DOUBLE,
+            err_count=MPI_Isend(send_buffer[i],send_max[i]*npcorr,MPI_COMPLEX_DOUBLE,
                                 dest_source_rank[i],my_rank,MPI_COMM_WORLD,&requests[nsend+i]);
             error(err_count!=MPI_SUCCESS,1,"average_equiv2 [shift_corr.c]",
                     "Failed to post Isend for averaging points to rank %d", dest_source_rank[i]);
@@ -658,16 +659,19 @@ void average_equiv2(complex_dble *corr)
         for (i=0;i<nsend;i++)
         {
             /* Sort my index in the way remote_index would be sorted */
-            get_sorted_indices(remote_index[i],sort_index[i],send_count[i]);
-            sort_array_from_indices(my_index[i],sort_index[i],send_count[i]);
+            get_sorted_indices(remote_index[i],sort_index[i],send_max[i]);
+            sort_array_from_indices(my_index[i],sort_index[i],send_max[i]);
 
             /* Take average with received data */
-            for (j=0;j<send_count[i];j++)
+            for (j=0;j<send_max[i];j++)
             {
-                corr[my_index[i][j]].re=0.5*(corr[my_index[i][j]].re+
-                                            receive_buffer[i][j].re);
-                corr[my_index[i][j]].im=0.5*(corr[my_index[i][j]].im+
-                                            receive_buffer[i][j].im);
+                for (ipcorr=0;ipcorr<npcorr;ipcorr++)
+                {
+                    corr[ipcorr*VOLUME+my_index[i][j]].re=0.5*(corr[ipcorr*VOLUME+my_index[i][j]].re+
+                                                receive_buffer[i][ipcorr*send_max[i]+j].re);
+                    corr[ipcorr*VOLUME+my_index[i][j]].im=0.5*(corr[ipcorr*VOLUME+my_index[i][j]].im+
+                                                receive_buffer[i][ipcorr*send_max[i]+j].im);
+                }
             }
         }
 
