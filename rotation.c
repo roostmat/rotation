@@ -202,7 +202,7 @@ static void write_head(void)
  *************************************************************************/
 static void write_data(void)
 {
-    int iw,out_sources[npcorr*4];
+    int iw;
 
     sprintf(dat_file,"%s/%sn%d.rotation.dat",dat_dir,outbase,data.nc);
     if (my_rank==0)
@@ -229,13 +229,7 @@ static void write_data(void)
     }
     /* Write the point correlators */
     MPI_Barrier(MPI_COMM_WORLD);
-    
-    /* Set out_sources to origin */
-    for (int i=0;i<nsrcs*4;i++)
-    {
-        out_sources[i]=0;
-    }
-    parallel_write(dat_file,&data,out_sources);
+    parallel_write(dat_file,&data,NULL);
 }
 
 
@@ -632,7 +626,7 @@ static void print_info(void)
             printf("cF        = %.6f\n",bc.cF[0]);
         }
         printf("outlat    = %d %d %d %d\n",outlat[0],outlat[1],outlat[2],outlat[3]);
-        printf("number of point sources: %d\n\n",nsrcs);
+        printf("nsrcs     = %d\n\n",nsrcs);
 
         for (i=0; i<nprop; i++)
         {
@@ -744,7 +738,7 @@ void set_srcs(void)
                             "Too many attempts to find unique source coordinates");
 
                     ranlxd(rand,4);
-                    srcs[4*i+0]=N0/2;
+                    srcs[4*i+0]=(N0-outlat[0])/2;
                     srcs[4*i+1]=(int)(rand[1]*N1);
                     srcs[4*i+2]=(int)(rand[2]*N2);
                     srcs[4*i+3]=(int)(rand[3]*N3);
@@ -1420,7 +1414,7 @@ static void divide_corr(void)
 
 static void point_correlators(void)
 {
-    int i,iy,isrc,iprop,ipcorr,cc,stat[6],src_coords[4];
+    int i,iy,isrc,iprop,ipcorr,cc,stat[6];
     int shift_vec[4];
     spinor_dble *source,*sink,**solution,**wsd;
     complex_dble factor={0.0,0.0};
@@ -1548,6 +1542,9 @@ static void point_correlators(void)
     /* Divide correlators by number of sources */
     divide_corr();
 
+    /* Average over equivalent points C(x)=C(-x) */
+    average_equiv(data.corr,outlat,bcon);
+
     /* Cleanup */
     cleanup_shift();
     free(solution);
@@ -1611,7 +1608,6 @@ int main(int argc,char *argv[])
     init_rng();
     set_up_parallel_out();
 
-    make_proplist();
     wsize(&nws,&nwv,&nwvd);
     alloc_ws(nws);
     wsd_uses_ws();

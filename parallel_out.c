@@ -72,10 +72,20 @@ void parallel_write(char *filename, corr_data_t *data, int *srcs)
     npts=0;
     for (ipcorr=0;ipcorr<npcorr;ipcorr++)
     {
-        start_coords[0]=srcs[4*ipcorr+0];
-        start_coords[1]=srcs[4*ipcorr+1];
-        start_coords[2]=srcs[4*ipcorr+2];
-        start_coords[3]=srcs[4*ipcorr+3];
+        if (srcs==NULL)
+        {
+            start_coords[0]=0;
+            start_coords[1]=0;
+            start_coords[2]=0;
+            start_coords[3]=0;
+        }
+        else
+        {
+            start_coords[0]=srcs[4*ipcorr+0];
+            start_coords[1]=srcs[4*ipcorr+1];
+            start_coords[2]=srcs[4*ipcorr+2];
+            start_coords[3]=srcs[4*ipcorr+3];
+        }
 
         for (t=0;t<outlat[0];t++)
         {
