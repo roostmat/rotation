@@ -159,7 +159,7 @@ static void write_head(void)
             bswap_int(1,istd);
         iw+=fwrite(istd,sizeof(stdint_t),1,fdat);
 
-        error_root(iw!=7,1,"write_file_head [rotation.c]",
+        error_root(iw!=7,1,"write_head [rotation.c]",
                 "Incorrect write count");
 
         for (i=0;i<npcorr;i++)
@@ -184,7 +184,7 @@ static void write_head(void)
                 bswap_int(1,istd);
             iw+=fwrite(istd,sizeof(stdint_t),1,fdat);
 
-            error_root(iw!=5,1,"write_file_head [rotation.c]",
+            error_root(iw!=4,1,"write_head [rotation.c]",
                         "Incorrect write count");
         }
         fclose(fdat);        
@@ -711,12 +711,10 @@ static void wsize(int *nws,int *nwv,int *nwvd)
 
 /*******************************************************************************
  * 
- *   void source_pos(int x0, int *src_coords)
- *      Sets the source coordinates src_coords. The time slice x0 is only used
- *      if bcon=0. In that case, if x0<0, the source is placed at the center of
- *      the lattice if pos=1, or at (N0-outlat[0])/2 if pos=0. Otherwise, the
- *      the source is placed at x0. If bcon=3, the source is placed at random.
- * 
+ *   void set_srcs(void)
+ *      Randomly sets the nsrcs unique source positions. If the boundary
+ *      condition is bcon=0, the source time slice is set to N0/2.
+ *
  ******************************************************************************/
 void set_srcs(void)
 {
@@ -738,7 +736,7 @@ void set_srcs(void)
                             "Too many attempts to find unique source coordinates");
 
                     ranlxd(rand,4);
-                    srcs[4*i+0]=(N0-outlat[0])/2;
+                    srcs[4*i+0]=N0/2;
                     srcs[4*i+1]=(int)(rand[1]*N1);
                     srcs[4*i+2]=(int)(rand[2]*N2);
                     srcs[4*i+3]=(int)(rand[3]*N3);
@@ -1400,7 +1398,7 @@ static void add_tmp_to_corr(void)
 }
 
 
-static void divide_corr(void)
+static void norm_corr(void)
 {
     int i;
     double norm=(double)nsrcs;
@@ -1540,10 +1538,7 @@ static void point_correlators(void)
     }
 
     /* Divide correlators by number of sources */
-    divide_corr();
-
-    /* Average over equivalent points C(x)=C(-x) */
-    average_equiv(data.corr,outlat,bcon);
+    norm_corr();
 
     /* Cleanup */
     cleanup_shift();
