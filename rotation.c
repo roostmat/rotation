@@ -725,7 +725,7 @@ void set_srcs(void)
 {
     int err_count=0,i,j;
     double rand[4];
-    int is_unique=0,attempt=0,max_attempts=100;
+    int is_unique,attempt,max_attempts=1000;
 
     if (my_rank==0)
     {
@@ -733,6 +733,8 @@ void set_srcs(void)
         {
             for (i=0;i<nsrcs;i++)
             {
+                is_unique=0;
+                attempt=0;
                 while (!is_unique)
                 {
                     attempt++;
@@ -764,6 +766,8 @@ void set_srcs(void)
         {
             for (i=0;i<nsrcs;i++)
             {
+                is_unique=0;
+                attempt=0;
                 while (!is_unique)
                 {
                     attempt++;
