@@ -90,8 +90,6 @@ static void calculate_send_receive_structure(void)
     int receive_i,send_i;
     int err_count=0;
 
-    init_send_receive_structure(); /* Set auxiliary structures to zero/Null */
-
     local_shift[0]=safe_mod(shift[0],L0); /* local coords of base point (0,0,0,0) */
     local_shift[1]=safe_mod(shift[1],L1); /* of local lattice + shift */
     local_shift[2]=safe_mod(shift[2],L2);
@@ -266,6 +264,7 @@ static void cleanup_indices(void)
     int err_count=0,i;
     for (i=0;i<MAX_NEIGHBORS;i++)
     {
+        neighbor_long[i]=0; /* Reset neighbor_long flag */
         if (receive_indices[i]!=NULL)
         {
             free(receive_indices[i]);
