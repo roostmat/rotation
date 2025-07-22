@@ -74,8 +74,6 @@ static void setup_shift(void)
         corr_copy=malloc(npcorr*VOLUME*sizeof(complex_dble));
         error(corr_copy==NULL,1,"setup_shift [shift_corr.c]",
                 "Unable to allocate corr_copy array");
-
-        init_send_receive_structure();
         setup=1;
     }
 }
@@ -90,6 +88,8 @@ static void calculate_send_receive_structure(void)
     int receive_coords[DIM],send_coords[DIM];
     int receive_i,send_i;
     int err_count=0;
+
+    init_send_receive_structure();
 
     local_shift[0]=safe_mod(shift[0],L0); /* local coords of base point (0,0,0,0) */
     local_shift[1]=safe_mod(shift[1],L1); /* of local lattice + shift */
