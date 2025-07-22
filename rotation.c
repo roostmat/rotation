@@ -1472,8 +1472,12 @@ static void point_correlators(void)
         /* Calculate correlators for given source position */
         for (ipcorr=0;ipcorr<npcorr;ipcorr++)
         {
+            MPI_Barrier(MPI_COMM_WORLD);
             if (my_rank==0)
-            printf("Calculating correlator %d ...\n",ipcorr);
+            {
+                printf("Calculating correlator %d ...\n",ipcorr);
+                fflush(stdout);
+            }
 
             for (cc=0;cc<12;cc++)
             {   
@@ -1529,8 +1533,12 @@ static void point_correlators(void)
             }
         }
 
+        MPI_Barrier(MPI_COMM_WORLD);
         if (my_rank==0)
+        {
             printf("Shifting temporary correlators to origin...\n");
+            fflush(stdout);
+        }
 
         /* Shift source to origin */
         shift_vec[0]=-srcs[4*isrc+0];
@@ -1546,8 +1554,12 @@ static void point_correlators(void)
         add_tmp_to_corr();
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
     if (my_rank==0)
+    {
         printf("All correlators calculated.\n");
+        fflush(stdout);
+    }
 
     /* Divide correlators by number of sources */
     norm_corr();
