@@ -80,7 +80,7 @@ static int nsrcs=-1;                           /* number of point sources */
 static int bcon=-1;                            /* boundary conditions of the run */
 static int my_rank,noexp,endian; /* append,norng; */
 static int first,step,last;
-static int level,seed,nprop,ninverse;
+static int level,seed,nprop;
 static int *isps,*props1,*props2,*type1,*type2,*srcs;
 static double *kappas,*mus;
 
@@ -346,7 +346,6 @@ static void read_run_parms(void)
                     "Specified outlat out of range");
         error_root(nsrcs<1,1,"read_run_parms [rotation.c]",
                     "nsrcs must be greater than 0");
-        ninverse=nprop*nsrcs;
     }
     MPI_Bcast(&nprop,1,MPI_INT,0,MPI_COMM_WORLD);
     MPI_Bcast(&npcorr,1,MPI_INT,0,MPI_COMM_WORLD);
@@ -354,7 +353,6 @@ static void read_run_parms(void)
     MPI_Bcast(&cF,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
     MPI_Bcast(outlat,4,MPI_INT,0,MPI_COMM_WORLD);
     MPI_Bcast(&nsrcs,1,MPI_INT,0,MPI_COMM_WORLD);
-    MPI_Bcast(&ninverse,1,MPI_INT,0,MPI_COMM_WORLD);
     set_corr_data_parms(outlat,npcorr);
 
     kappas=malloc(nprop*sizeof(double));
@@ -710,7 +708,7 @@ static void wsize(int *nws,int *nwv,int *nwvd)
 
     for (iprop=0;iprop<nprop;iprop++)
         solver_wsize(isps[iprop],0,1,nws,nwv,nwvd);
-    *nws+=2*(ninverse*12+2);
+    *nws+=2*(nprop*12+2);
 
 }
 
@@ -1392,17 +1390,13 @@ static void solve_dirac(int prop, spinor_dble *eta, spinor_dble *psi,
 
 static void add_tmp_to_corr(void)
 {
-    int i,ipcorr;
-
-    for (ipcorr=0;ipcorr<npcorr;ipcorr++)
+    int i;
+    for (i=0;i<npcorr*VOLUME;i++)
     {
-        for (i=0;i<VOLUME;i++)
-        {
-            data.corr[ipcorr*VOLUME+i].re+=data.corr_tmp[ipcorr*VOLUME+i].re;
-            data.corr[ipcorr*VOLUME+i].im+=data.corr_tmp[ipcorr*VOLUME+i].im;
-            data.corr_tmp[ipcorr*VOLUME+i].re=0.0; /* Wipe temporary buffer*/
-            data.corr_tmp[ipcorr*VOLUME+i].im=0.0;
-        }
+        data.corr[i].re+=data.corr_tmp[i].re;
+        data.corr[i].im+=data.corr_tmp[i].im;
+        data.corr_tmp[i].re=0.0; /* Wipe temporary buffer */
+        data.corr_tmp[i].im=0.0;
     }
 }
 
@@ -1428,16 +1422,16 @@ static void point_correlators(void)
     complex_qflt tmp;
 
     /* Reserve working space */
-    wsd=reserve_wsd(12*ninverse+2);
+    wsd=reserve_wsd(12*nprop+2);
     error(wsd==NULL,1,"point_correlators [rotation.c]",
             "Unable to reserve working space");
     source=wsd[0];
     sink=wsd[1];
-    solution=malloc(12*ninverse*sizeof(spinor_dble*));
+    solution=malloc(12*nprop*sizeof(spinor_dble*));
     error(solution==NULL,1,"point_correlators [rotation.c]",
             "Unable to allocate solution array");
 
-    for (i=0;i<12*ninverse;i++)
+    for (i=0;i<12*nprop;i++)
         solution[i]=wsd[i+2];
 
     /* Initialize correlators */
@@ -1469,7 +1463,7 @@ static void point_correlators(void)
                 if (my_rank==0)
                     printf("%2d   ",(cc+1));
                 MPI_Barrier(MPI_COMM_WORLD);
-                solve_dirac(iprop,source,solution[isrc*nprop*12+iprop*12+cc],stat);
+                solve_dirac(iprop,source,solution[iprop*12+cc],stat);
                 if (my_rank==0)
                     fflush(stdout);
             }
@@ -1478,12 +1472,13 @@ static void point_correlators(void)
         /* Calculate correlators for given source position */
         for (ipcorr=0;ipcorr<npcorr;ipcorr++)
         {
+            if (my_rank==0)
+            printf("Calculating correlator %d ...\n",ipcorr);
+
             for (cc=0;cc<12;cc++)
             {   
-                make_source(solution[isrc*nprop*12+props2[ipcorr]*12
-                                        +choose_cc(type2[ipcorr],cc,&factor)],source);
-                make_sink(solution[isrc*nprop*12+props1[ipcorr]*12+cc],
-                            type1[ipcorr],sink);
+                make_source(solution[props2[ipcorr]*12+choose_cc(type2[ipcorr],cc,&factor)],source);
+                make_sink(solution[props1[ipcorr]*12+cc],type1[ipcorr],sink);
                 if ((factor.re == 1.0)&&(factor.im == 0.0))
                 {
                     for (i=0;i<VOLUME;i++)
@@ -1534,6 +1529,9 @@ static void point_correlators(void)
             }
         }
 
+        if (my_rank==0)
+            printf("Shifting temporary correlators to origin...\n");
+
         /* Shift source to origin */
         shift_vec[0]=-srcs[4*isrc+0];
         shift_vec[1]=-srcs[4*isrc+1];
@@ -1541,9 +1539,15 @@ static void point_correlators(void)
         shift_vec[3]=-srcs[4*isrc+3];
         shift_corr(data.corr_tmp,shift_vec);
 
+        if (my_rank==0)
+            printf("Adding temporary correlators to correlators...\n");
+
         /* Add data.corr_tmp to data.corr */
         add_tmp_to_corr();
     }
+
+    if (my_rank==0)
+        printf("All correlators calculated.\n");
 
     /* Divide correlators by number of sources */
     norm_corr();
