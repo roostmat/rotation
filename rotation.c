@@ -196,13 +196,14 @@ static void write_head(void)
  * 
  * void write_data(void)
  *    Writes out the data file for the current configuration. The data file
- *    contains the source coordinates of each point (npcorr*4*4 bytes) and
+ *    contains the source coordinates of each point (nsrcs*4*4 bytes) and
  *    the correlator data.size*16 bytes.
  * 
  *************************************************************************/
 static void write_data(void)
 {
-    int iw;
+    int iw,int_size,err_count;
+    MPI_Offset skip;
 
     sprintf(dat_file,"%s/%sn%d.rotation.dat",dat_dir,outbase,data.nc);
     if (my_rank==0)
@@ -229,7 +230,11 @@ static void write_data(void)
     }
     /* Write the point correlators */
     MPI_Barrier(MPI_COMM_WORLD);
-    parallel_write(dat_file,&data,NULL);
+    err_count=MPI_Type_size(MPI_INT,&int_size);
+    error(err_count!=MPI_SUCCESS,1,"write_data [parallel_out.c]",
+            "Failed to get size of MPI_INT data type");
+    skip=4*nsrcs*int_size; /* Skip the source coords at beginning of data file */
+    parallel_write(dat_file,&data,NULL,skip); /* write data in parallel */
 }
 
 
@@ -1246,83 +1251,83 @@ static int choose_cc(int type, int cc, complex_dble *factor)
 }
 
 
-/* xi = Gamma * eta */
-static void make_source(spinor_dble *eta, int type, spinor_dble *xi)
+/* xi = - Gamma * eta */
+static void make_sink(spinor_dble *eta, int type, spinor_dble *xi)
 {
     switch (type)
     {
         case GAMMA0_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg0_dble(VOLUME,xi);
             break;
         case GAMMA1_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg1_dble(VOLUME,xi);
             break;
         case GAMMA2_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg2_dble(VOLUME,xi);
             break;
         case GAMMA3_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg3_dble(VOLUME,xi);
             break;
         case GAMMA5_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg5_dble(VOLUME_TRD,2,xi);
             break;
         case ONE_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             break;
         case GAMMA0GAMMA1_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg0g1_dble(VOLUME,xi);
             break;
         case GAMMA0GAMMA2_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg0g2_dble(VOLUME,xi);
             break;
         case GAMMA0GAMMA3_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg0g3_dble(VOLUME,xi);
             break;
         case GAMMA0GAMMA5_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg0g5_dble(VOLUME,xi);
             break;
         case GAMMA1GAMMA2_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg1g2_dble(VOLUME,xi);
             break;
         case GAMMA1GAMMA3_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg1g3_dble(VOLUME,xi);
             break;
         case GAMMA1GAMMA5_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg1g5_dble(VOLUME,xi);
             break;
         case GAMMA2GAMMA3_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg2g3_dble(VOLUME,xi);
             break;
         case GAMMA2GAMMA5_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg2g5_dble(VOLUME,xi);
             break;
         case GAMMA3GAMMA5_TYPE:
-            assign_sd2sd(VOLUME_TRD,2,eta,xi);
+            assign_msd2sd(VOLUME,eta,xi);
             mulg3g5_dble(VOLUME,xi);
             break;
         default:
-            error_root(1,1,"make_source [rotation.c]",
+            error_root(1,1,"make_sink [rotation.c]",
                     "Unknown or unsupported type");
     }
 }
 
 
 /* xi = gamma_5 eta */
-static void make_sink(spinor_dble *eta, spinor_dble *xi)
+static void make_source(spinor_dble *eta, spinor_dble *xi)
 {
     assign_sd2sd(VOLUME_TRD,2,eta,xi);
     mulg5_dble(VOLUME_TRD,2,xi);
@@ -1471,10 +1476,10 @@ static void point_correlators(void)
         {
             for (cc=0;cc<12;cc++)
             {   
-                make_source(solution[isrc*nprop*12+props1[ipcorr]*12+cc],
-                            type1[ipcorr],source);
-                make_sink(solution[isrc*nprop*12+props1[ipcorr]*12
-                                    +choose_cc(type2[ipcorr],cc,&factor)],sink);
+                make_source(solution[isrc*nprop*12+props2[ipcorr]*12
+                                        +choose_cc(type2[ipcorr],cc,&factor)],source);
+                make_sink(solution[isrc*nprop*12+props1[ipcorr]*12+cc],
+                            type1[ipcorr],sink);
                 if ((factor.re == 1.0)&&(factor.im == 0.0))
                 {
                     for (i=0;i<VOLUME;i++)
@@ -1495,17 +1500,16 @@ static void point_correlators(void)
                         data.corr_tmp[ipcorr*VOLUME+i].im-=tmp.im.q[0];
                     }
                 }
-                /* factors of +i and -i get an extra minus sign
-                    due to complex conjugation of first element
-                    in complex scalar product */
+                /* complex conjugation happens in first element */
+                /* => factor of +-i in source term not affected */
                 else if ((factor.re == 0.0)&&(factor.im == 1.0))
                 {
                     for (i=0;i<VOLUME;i++)
                     {
                         iy=ipt[i];
                         tmp=spinor_prod_dble(1,0,sink+iy,source+iy);
-                        data.corr_tmp[ipcorr*VOLUME+i].re+=tmp.im.q[0];
-                        data.corr_tmp[ipcorr*VOLUME+i].im-=tmp.re.q[0];
+                        data.corr_tmp[ipcorr*VOLUME+i].re-=tmp.im.q[0];
+                        data.corr_tmp[ipcorr*VOLUME+i].im+=tmp.re.q[0];
                     }
                 }
                 else if ((factor.re == 0.0)&&(factor.im == -1.0))
@@ -1514,8 +1518,8 @@ static void point_correlators(void)
                     {
                         iy=ipt[i];
                         tmp=spinor_prod_dble(1,0,sink+iy,source+iy);
-                        data.corr_tmp[ipcorr*VOLUME+i].re-=tmp.im.q[0];
-                        data.corr_tmp[ipcorr*VOLUME+i].im+=tmp.re.q[0];
+                        data.corr_tmp[ipcorr*VOLUME+i].re+=tmp.im.q[0];
+                        data.corr_tmp[ipcorr*VOLUME+i].im-=tmp.re.q[0];
                     }
                 }
                 else

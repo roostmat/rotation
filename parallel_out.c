@@ -18,7 +18,7 @@
 static int my_rank,endian,setup=0;
 static int outlat[4]={-1,-1,-1,-1},size,npcorr; /* output lattice dimensions */
 static MPI_Datatype MPI_COMPLEX_DOUBLE;
-static int int_size=0,complex_double_size=0;
+static int complex_double_size=0;
 
 
 
@@ -35,10 +35,9 @@ void set_up_parallel_out(void)
         create_MPI_COMPLEX_DOUBLE(&MPI_COMPLEX_DOUBLE);
         endian=endianness();
         /* Calculate data sizes */
-        err_count=MPI_Type_size(MPI_INT,&int_size);
-        err_count+=MPI_Type_size(MPI_COMPLEX_DOUBLE,&complex_double_size);
+        err_count=MPI_Type_size(MPI_COMPLEX_DOUBLE,&complex_double_size);
         error(err_count!=MPI_SUCCESS,1,"parallel_write [parallel_out.c]",
-                "Failed to get size of MPI_INT and MPI_COMPLEX_DOUBLE data types");
+                "Failed to get size of MPI_COMPLEX_DOUBLE data type");
         /* Set my_rank */
         err_count=MPI_Comm_rank(MPI_COMM_WORLD,&my_rank);
         error(err_count!=MPI_SUCCESS,err_count,"parallel_write [parallel_out.c]",
@@ -49,7 +48,7 @@ void set_up_parallel_out(void)
 
 
 
-void parallel_write(char *filename, corr_data_t *data, int *srcs)
+void parallel_write(char *filename,corr_data_t *data,int *src,MPI_Offset skip)
 {
     int ip,ix,*io,coords[4],start_coords[4];
     int ipcorr,t,x,y,z,npts;
@@ -57,7 +56,6 @@ void parallel_write(char *filename, corr_data_t *data, int *srcs)
     int err_count=0;
     MPI_Datatype filetype;
     MPI_File fh;
-    MPI_Offset disp;
     MPI_Aint lb,extent;
 
     error(setup!=1,1,"parallel_write [parallel_out.c]",
@@ -72,7 +70,7 @@ void parallel_write(char *filename, corr_data_t *data, int *srcs)
     npts=0;
     for (ipcorr=0;ipcorr<npcorr;ipcorr++)
     {
-        if (srcs==NULL)
+        if (src==NULL)
         {
             start_coords[0]=0;
             start_coords[1]=0;
@@ -81,10 +79,10 @@ void parallel_write(char *filename, corr_data_t *data, int *srcs)
         }
         else
         {
-            start_coords[0]=srcs[4*ipcorr+0];
-            start_coords[1]=srcs[4*ipcorr+1];
-            start_coords[2]=srcs[4*ipcorr+2];
-            start_coords[3]=srcs[4*ipcorr+3];
+            start_coords[0]=src[4*ipcorr+0];
+            start_coords[1]=src[4*ipcorr+1];
+            start_coords[2]=src[4*ipcorr+2];
+            start_coords[3]=src[4*ipcorr+3];
         }
 
         for (t=0;t<outlat[0];t++)
@@ -155,8 +153,7 @@ void parallel_write(char *filename, corr_data_t *data, int *srcs)
             "Failed to open file for writing");
 
     /* Set file view */
-    disp=4*npcorr*int_size; /* Skip the source coords at beginning of file */
-    err_count=MPI_File_set_view(fh,disp,MPI_COMPLEX_DOUBLE,filetype,"native",MPI_INFO_NULL);
+    err_count=MPI_File_set_view(fh,skip,MPI_COMPLEX_DOUBLE,filetype,"native",MPI_INFO_NULL);
     error(err_count!=MPI_SUCCESS,err_count,"parallel_write",
             "Failed to set file view");
 

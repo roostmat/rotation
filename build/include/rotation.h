@@ -50,12 +50,12 @@ extern void copy_corr_data(complex_dble *dest); */
 extern void lex_global(int *x,int *ip,int *ix);
 extern void create_MPI_COMPLEX_DOUBLE(MPI_Datatype *mpi_complex_double);
 extern void free_MPI_COMPLEX_DOUBLE(MPI_Datatype *mpi_complex_double);
-extern void set_corr_data_parms(int outlat[4], int npcorr);
+extern void set_corr_data_parms(int outlat[4],int npcorr);
 extern void get_outlat(int outlat[4]);
 extern int get_size(void);
 extern int get_npcorr(void);
 extern void get_sorted_indices(int *array,int *indices,int length);
-extern void sort_array_from_indices(int *array, int *indices, int length);
+extern void sort_array_from_indices(int *array,int *indices,int length);
 extern int lex_rank_to_ipr_global(int lex_rank);
 
 
@@ -70,6 +70,6 @@ extern void average_equiv2(complex_dble *corr);
 
 /* PARALLEL_OUT_C */
 extern void set_up_parallel_out(void);
-extern void parallel_write(char *filename,corr_data_t *data,int *srcs);
+extern void parallel_write(char *filename,corr_data_t *data,int *srcs,MPI_Offset skip);
 
 #endif

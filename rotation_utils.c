@@ -89,7 +89,7 @@ void free_MPI_COMPLEX_DOUBLE(MPI_Datatype *mpi_complex_double)
 
 
 /* Set correlation data parameters */
-void set_corr_data_parms(int outlat[4], int npcorr)
+void set_corr_data_parms(int outlat[4],int npcorr)
 {
     data_parms.outlat[0] = outlat[0];
     data_parms.outlat[1] = outlat[1];
@@ -162,7 +162,7 @@ void get_sorted_indices(int *array,int *indices,int length)
 
 
 
-void sort_array_from_indices(int *array, int *indices, int length)
+void sort_array_from_indices(int *array,int *indices,int length)
 {
     int i,tmp[length];
     for (i=0;i<length;i++)
