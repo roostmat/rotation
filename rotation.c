@@ -1,8 +1,8 @@
 /*******************************************************************************
 *
-* File mesons.c
+* File rotation.c
 *
-* Copyright (C) 2024, 2025 Tomasz Korzec
+* Copyright (C) 2024, 2025 Mattis Roost
 *
 * Based on mesons
 * Copyright (C) 2013, 2014 Tomasz Korzec
