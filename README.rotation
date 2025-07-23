@@ -13,7 +13,7 @@ rotation -i <filename>
 DESCRIPTION
 
 This program reads gauge field configurations from disk and computes
-two-point meson correlators from a random source point (x0,xi) to all
+two-point meson correlators from a random point source (x0,xi) to all
 other points (x0,yi) on the same time slice. The result is stored in a
 binary file.
 

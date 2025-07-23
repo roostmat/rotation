@@ -1,22 +1,41 @@
 /*******************************************************************************
-*
-* File parallel_out_test.c
-*
-* Test program for the parallel_write function. The program assigns every point
-* on each local lattice its lexicographical index with respect to the global
-* lattice. Then, the parallel_write function is called and should produce a data
-* file with the lexicographical indices of the points in the correct order.
-* The program then reads the data file and checks if the lexicographical indices
-* are in the correct order. The program is run for all possible combinations of
-* boundary conditions and source positions.
-*
-* compile:  make parallel_out_test (global and local lattice dimensions are set
-*           via the global.h file in ../../openQCD-2.4.1/include/)
-* run:  ./parallel_out_test -O <outlat[0]> <outlat[1]> <outlat[2]> <outlat[3]>
-*
-* 
-*******************************************************************************/
-
+ *
+ * Copyright (C) 2024, 2025 Mattis Roost
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *******************************************************************************
+ *
+ * Test for parallel_write()
+ * 
+ * This program tests the parallel_write function by writing out
+ * data from all processes to a file in parallel and then comparing
+ * the result with a serial write from process 0 to ensure correctness.
+ * 
+ * COMPILATION:
+ *   make parallel_out_test
+ * 
+ * USAGE:
+ *   export OMP_NUM_THREADS=1
+ *   mpirun -np <num_processes> ./parallel_out_test [OPTIONS]
+ * 
+ * OPTIONS:
+ *  -outlat <t> <x> <y> <z>    Output lattice dimensions (required)
+ *  -source <t> <x> <y> <z>    Source position coordinates (optional, default: 0 0 0 0)
+ *  -npcorr <n>                Number of point correlators (optional, default: 1)
+ * 
+ *******************************************************************************/
 
 #define MAIN_PROGRAM
 
@@ -31,96 +50,41 @@
 #include "random.h" /* start_ranlux */
 #include "rotation.h" /* corr_data set_outlat alloc_ranks source_pos gather_data */
 #include "utils.h" /* mpi_init error error_root safe_mod */
-#include "version.h"
-
-#include <time.h> /* time */
 
 
-corr_data data;
-static int my_rank,endian,iw,num_bytes;
-static int outlat[4];
-static char test_file[]="parallel_write_test.dat", cmp_file[]="serial_write_cmp.dat";
-static FILE *flog=NULL,*ftest=NULL,*fcmp=NULL;
-
-
-
-void source_pos(int x0, int pos, int bcon, int *src_coords)
-{
-    int err_count=0;
-    double rand[4];
-
-    /* check if outlat has been set */
-    error_root((outlat[0]==-1)||(outlat[1]==-1)||(outlat[2]==-1)||(outlat[3]==-1),1,
-                "source_pos [parallel_out.c]","Output lattice not set");
-
-    if (my_rank==0)
-    {
-        ranlxd(rand,4);
-
-        if (pos==0)
-        {
-            if (bcon==0)
-            {
-                if (x0<0)
-                    src_coords[0]=(N0-outlat[0])/2;
-                else
-                    src_coords[0]=x0;
-            }
-            else if (bcon==3)
-            {
-                src_coords[0]=(int)(rand[0]*N0);
-            }
-            else
-            {
-                error_root(1,1,"source_pos [parallel_out.c]",
-                            "Unknown or unsupported boundary condition");
-            }
-        }
-        else
-        {
-            if (bcon==0)
-            {
-                if (x0<0)
-                    src_coords[0]=(N0-1)/2;
-                else
-                    src_coords[0]=x0;
-            }
-            else if (bcon==3)
-            {
-                src_coords[0]=(int)(rand[0]*N0);
-            }
-            else
-            {
-                error_root(1,1,"source_pos [parallel_out.c]",
-                            "Unknown or unsupported boundary condition");
-            }
-        }
-        src_coords[1]=(int)(rand[1]*N1);
-        src_coords[2]=(int)(rand[2]*N2);
-        src_coords[3]=(int)(rand[3]*N3);
-    }
-    err_count=MPI_Bcast(src_coords,4,MPI_INT,0,MPI_COMM_WORLD);
-    error(err_count!=MPI_SUCCESS,1,"source_pos [parallel_out.c]",
-            "Failed to broadcast source coordinates");
-}
 
 
 
 int main(int argc, char *argv[])
 {
-    int i,j,t,x,y,z,seed=-1,err,err_sum,cmp_result;
-    int index,loc_index,pos,bc,start_coords[4],src_coords[4];
+    corr_data_t data;
+
+    int my_rank,endian,iw,num_bytes;
+    int size,source[4];
+    char test_file[]="parallel_write_test.dat", cmp_file[]="serial_write_cmp.dat";
+    FILE *flog=NULL,*ftest=NULL,*fcmp=NULL;
+    int err_count,int_size;
+    MPI_Offset skip;
+
+    int i,j,t,x,y,z,ipcorr,err,cmp_result;
+    int index,loc_index;
     char *buf_test,*buf_cmp;
     size_t ir_test,ir_cmp;
     complex_dble data_pt;
 
     mpi_init(argc, argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-    create_MPI_COMPLEX_DOUBLE();
 
     /* Parse command line arguments on rank 0 */
     if (my_rank==0)
     {
+        /* Set default source and npcorr*/
+        source[0]=0;
+        source[1]=0;
+        source[2]=0;
+        source[3]=0;
+        data.npcorr=1;
+
         /* Open log file */
         flog=freopen("parallel_out_test.log","w", stdout);
         error_root(flog==NULL,1,"main [parallel_out_test.c]",
@@ -130,26 +94,36 @@ int main(int argc, char *argv[])
         {
             if (argv[i][0]=='-')
             {
-                if (argv[i][1]=='O')
+                if (strcmp(argv[i],"-outlat")==0)
                 {
                     error_root(i+4>argc,1,"main [parallel_out_test.c]",
-                                "Too few arguments were given. O flag requires four positive integer arguments.");
+                                "Too few arguments were given. outlat flag requires four positive integer arguments.");
                     for (j=0;j<4;j++)
                     {
                         i++;
-                        outlat[j]=atoi(argv[i]);
-                        error_root(outlat[j]==0,1,"main [parallel_out_test.c]",
-                                "O flag requires four positive integer arguments");
+                        data.outlat[j]=atoi(argv[i]);
+                        error_root(data.outlat[j]==0,1,"main [parallel_out_test.c]",
+                                "outlat flag requires four positive integer arguments");
                     }
                 }
-                else if (argv[i][1]=='s')
+                else if (strcmp(argv[i],"-source")==0)
+                {
+                    error_root(i+4>argc,1,"main [parallel_out_test.c]",
+                                "Too few arguments were given. source flag requires four positive integer arguments.");
+                    for (j=0;j<4;j++)
+                    {
+                        i++;
+                        source[j]=atoi(argv[i]);
+                    }
+                }
+                else if (strcmp(argv[i],"-npcorr")==0)
                 {
                     error_root(i+1>argc,1,"main [parallel_out_test.c]",
-                                "Too few arguments were given. s flag requires one positive integer argument.");
+                                "Too few arguments were given. npcorr flag requires one positive integer argument.");
                     i++;
-                    seed=atoi(argv[i]);
-                    error_root(seed<1,1,"main [parallel_out_test.c]",
-                                "Seed must be a positive integer");
+                    data.npcorr=atoi(argv[i]);
+                    error_root(data.npcorr<=0,1,"main [parallel_out_test.c]",
+                                "npcorr flag requires one positive integer argument");
                 }
                 else
                 {
@@ -160,33 +134,35 @@ int main(int argc, char *argv[])
         }
 
         /* Check that lattice sizes are positive integers */
-        if ((NPROC0*L0<1)||(NPROC1*L1<1)||(NPROC2*L2<1)||(NPROC3*L3<1)
+        if ((N0<1)||(N1<1)||(N2<1)||(N3<1)
             ||(L0<1)||(L1<1)||(L2<1)||(L3<1)
-            ||(outlat[0]<1)||(outlat[1]<1)||(outlat[2]<1)||(outlat[3]<1))
+            ||(data.outlat[0]<1)||(data.outlat[1]<1)||(data.outlat[2]<1)||(data.outlat[3]<1))
         {
             error_root(1,1,"main [gather_data_test.c]",
                     "Lattice sizes must be positive integers");
         }
         /* Check that output lattice size is less than or equal to global lattice size */
-        if ((outlat[0])>(NPROC0*L0)||(outlat[1])>(NPROC1*L1)
-            ||(outlat[2])>(NPROC2*L2)||(outlat[3])>(NPROC3*L3))
+        if ((data.outlat[0])>(N0)||(data.outlat[1])>(N1)
+            ||(data.outlat[2])>(N2)||(data.outlat[3])>(N3))
         {
             error_root(1,1,"main [gather_data_test.c]",
                     "Output lattice size must be less than or equal to global lattice size");
         }
     }
-    MPI_Bcast(outlat,4,MPI_INT,0,MPI_COMM_WORLD);
-    MPI_Bcast(&seed,1,MPI_INT,0,MPI_COMM_WORLD);
+    MPI_Bcast(&data.npcorr,1,MPI_INT,0,MPI_COMM_WORLD);
+    MPI_Bcast(data.outlat,4,MPI_INT,0,MPI_COMM_WORLD);
+    MPI_Bcast(&source,4,MPI_INT,0,MPI_COMM_WORLD);
 
     /* Allocate data */
-    data.size=outlat[0]*outlat[1]*outlat[2]*outlat[3];
-    data.corr=malloc(VOLUME*sizeof(complex_dble));
-    data.corr_out=malloc(VOLUME*sizeof(complex_dble));
-    error((data.corr==NULL)||(data.corr_out==NULL),1,"main [gather_data_test.c]",
+    size=data.outlat[0]*data.outlat[1]*data.outlat[2]*data.outlat[3];
+    data.nc=1; /* irrelevant in this case */
+    data.corr=malloc(data.npcorr*VOLUME*sizeof(complex_dble));
+    data.corr_tmp=malloc(data.npcorr*VOLUME*sizeof(complex_dble));
+    error((data.corr==NULL)||(data.corr_tmp==NULL),1,"main [gather_data_test.c]",
             "Unable to allocate data arrays");
 
     /* Allocate buffer */
-    num_bytes=4*sizeof(int)+2*data.size*sizeof(double);
+    num_bytes=4*sizeof(int)+2*data.npcorr*size*sizeof(double);
     buf_test=malloc(num_bytes);
     buf_cmp=malloc(num_bytes);
     if (buf_test==NULL||buf_cmp==NULL)
@@ -199,32 +175,27 @@ int main(int argc, char *argv[])
 
     /* Set up lattice geometry */
     geometry();
-
-    /* Generate seed if not set via commandline */
-    if (seed==-1)
-    {
-        srand(time(NULL));
-        seed=rand()%10001;
-    }
-
-    start_ranlux(0,seed);
     
     /* Write local lattice on each process */
-    for (t=0;t<L0;t++)
+    for (ipcorr=0;ipcorr<data.npcorr;ipcorr++)
     {
-        for (x=0;x<L1;x++)
+        for (t=0;t<L0;t++)
         {
-            for (y=0;y<L2;y++)
+            for (x=0;x<L1;x++)
             {
-                for (z=0;z<L3;z++)
+                for (y=0;y<L2;y++)
                 {
-                    loc_index=z+y*L3+x*L2*L3+t*L1*L2*L3;
-                    index=cpr[3]*L3+z
-                            +(cpr[2]*L2+y)*NPROC3*L3
-                            +(cpr[1]*L1+x)*NPROC2*L2*NPROC3*L3
-                            +(cpr[0]*L0+t)*NPROC1*L1*NPROC2*L2*NPROC3*L3;
-                    data.corr[loc_index].re=(double)index;
-                    data.corr[loc_index].im=0.0;
+                    for (z=0;z<L3;z++)
+                    {
+                        loc_index=z+y*L3+x*L2*L3+t*L1*L2*L3;
+                        index=ipcorr*N0*N1*N2*N3
+                                +cpr[3]*L3+z
+                                +(cpr[2]*L2+y)*N3
+                                +(cpr[1]*L1+x)*N2*N3
+                                +(cpr[0]*L0+t)*N1*N2*N3;
+                        data.corr[ipcorr*VOLUME+loc_index].re=(double)index;
+                        data.corr[ipcorr*VOLUME+loc_index].im=-(double)index;
+                    }
                 }
             }
         }
@@ -234,188 +205,165 @@ int main(int argc, char *argv[])
     MPI_Barrier(MPI_COMM_WORLD);
     if (my_rank==0)
     {
-        printf("PARALLEL_OUT TEST\n");
+        printf("PARALLEL_OUT TEST\n\n");
         printf("Global lattice: %d %d %d %d\n",
-                NPROC0*L0,NPROC1*L1,NPROC2*L2,NPROC3*L3);
+                N0,N1,N2,N3);
         printf("Local lattice: %d %d %d %d\n",L0,L1,L2,L3);
         printf("Output lattice: %d %d %d %d\n",
-                outlat[0],outlat[1],outlat[2],outlat[3]);
-        printf("Random seed: %d\n\n\n",seed);
+                data.outlat[0],data.outlat[1],data.outlat[2],data.outlat[3]);
+        printf("Source position: %d %d %d %d\n",
+                source[0],source[1],source[2],source[3]);
+        printf("Number of point correlators: %d\n\n",data.npcorr);
+        fflush(stdout);
     }
 
-    /* Run test for all possible combinations of boundary conditions and source positions */
-    err_sum=0;
-    for (bc=0;bc<2;bc++)
+    /* Set up parallel out */
+    setup_parallel_out(&data);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (my_rank==0)
     {
-        if (bc==1)
-            bc=3;
+        printf("setup_parallel_out() completed\n\n");
+        fflush(stdout);
+    }
+    
+    if (my_rank==0)
+    {
+        /* Check for old test files */
+        error_root((fopen(test_file,"rb")!=NULL)||(fopen(cmp_file,"rb")!=NULL),
+                    1,"main [parallel_out_test.c]",
+                    "Attempt to overwrite old data files");
 
-        for (pos=0;pos<2;pos++)
+        ftest=fopen(test_file,"wb");
+        error_root(ftest==NULL,1,"main [parallel_out_test.c]",
+                    "Unable to open test file");
+
+        /* Write source coordinates to file */
+        iw=0;
+        if (endian==BIG_ENDIAN)
         {
-            MPI_Barrier(MPI_COMM_WORLD);
-            if (my_rank==0)
+            bswap_int(4,source);
+        }
+        iw+=fwrite(source,sizeof(int),4,ftest);
+        error_root(iw!=4,1,"main [parallel_out_test.c]",
+                    "Incorrect write count");
+        fclose(ftest);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (my_rank==0)
+    {
+        printf("Writing data to parallel_write_test.dat in parallel...\n");
+        fflush(stdout);
+    }
+    /* Use parallel_write() to write the data to parallel_write_test.dat */
+    err_count=MPI_Type_size(MPI_INT,&int_size);
+    error(err_count!=MPI_SUCCESS,1,"write_data [parallel_out.c]",
+            "Failed to get size of MPI_INT data type");
+    skip=4*int_size; /* Skip the source coords at beginning of data file */
+    parallel_write(test_file,&data,source,skip);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (my_rank==0)
+    {
+        printf("...completed.\n\n");
+        fflush(stdout);
+    }
+
+    /* Write serial_write_cmp.dat for comparison */
+    if (my_rank==0)
+    {
+        printf("Writing data to serial_write_cmp.dat in serial...\n");
+        fflush(stdout);
+
+        fcmp=fopen(cmp_file,"wb");
+        error_root(fcmp==NULL,1,"main [parallel_out_test.c]",
+                    "Unable to open comparison file");
+
+        iw=0;
+        if (endian==BIG_ENDIAN)
+        {
+            bswap_int(4,source);
+        }
+        iw+=fwrite(source,sizeof(int),4,fcmp);
+        error_root(iw!=4,1,"main [parallel_out_test.c]",
+                    "Incorrect write count");
+
+        iw=0;
+        for (ipcorr=0;ipcorr<data.npcorr;ipcorr++)
+        {
+            for (t=0;t<data.outlat[0];t++)
             {
-                printf("TESTING\n");
-                printf("Boundary condition: %d\n",bc);
-                printf("Source positioning: %d\n",pos);
-            }
-
-            /* Set up parallel out */
-            set_up_parallel_out(outlat, 1, pos, bc);
-
-            /* Set source position */
-            source_pos(-1, pos, bc, src_coords);
-            if (my_rank==0)
-            {
-                printf("Source position: %d %d %d %d\n\n",
-                        src_coords[0],src_coords[1],src_coords[2],src_coords[3]);
-                fflush(stdout);    
-            }
-            
-            if (my_rank==0)
-            {
-                /* Check for old test files */
-                error_root((fopen(test_file,"rb")!=NULL)||(fopen(cmp_file,"rb")!=NULL),
-                            1,"main [parallel_out_test.c]",
-                            "Attempt to overwrite old data files");
-
-                ftest=fopen(test_file,"wb");
-                error_root(ftest==NULL,1,"main [parallel_out_test.c]",
-                            "Unable to open test file");
-
-                /* Write source coordinates to file */
-                iw=0;
-                if (endian==BIG_ENDIAN)
+                for (x=0;x<data.outlat[1];x++)
                 {
-                    bswap_int(4,src_coords);
-                }
-                iw+=fwrite(src_coords,sizeof(int),4,ftest);
-                error_root(iw!=4,1,"main [parallel_out_test.c]",
-                            "Incorrect write count");
-                fclose(ftest);
-            }
-            MPI_Barrier(MPI_COMM_WORLD);
-            if (my_rank==0)
-            {
-                printf("writing data to parallel_write_test.dat in parallel...\n");
-                fflush(stdout);
-            }
-            /* Use parallel_write() to write the data to parallel_write_test.dat */
-            parallel_write(test_file,&data,src_coords);
-
-            /* Write serial_write_cmp.dat for comparison */
-            if (my_rank==0)
-            {
-                printf("writing data to serial_write_cmp.dat in serial...\n");
-                fflush(stdout);
-
-                fcmp=fopen(cmp_file,"wb");
-                error_root(fcmp==NULL,1,"main [parallel_out_test.c]",
-                            "Unable to open comparison file");
-
-                if (pos==0)
-                {
-                    for (i=0;i<4;i++)
-                        start_coords[i]=src_coords[i];
-                }
-                else
-                {
-                    start_coords[0]=safe_mod(src_coords[0]-(outlat[0]-1)/2,NPROC0*L0);
-                    start_coords[1]=safe_mod(src_coords[1]-(outlat[1]-1)/2,NPROC1*L1);
-                    start_coords[2]=safe_mod(src_coords[2]-(outlat[2]-1)/2,NPROC2*L2);
-                    start_coords[3]=safe_mod(src_coords[3]-(outlat[3]-1)/2,NPROC3*L3);
-                }
-
-                iw=0;
-                if (endian==BIG_ENDIAN)
-                {
-                    bswap_int(4,src_coords);
-                }
-                iw+=fwrite(src_coords,sizeof(int),4,fcmp);
-                error_root(iw!=4,1,"main [parallel_out_test.c]",
-                            "Incorrect write count");
-
-                iw=0;
-                data_pt.im=0.0;
-                for (t=0;t<outlat[0];t++)
-                {
-                    for (x=0;x<outlat[1];x++)
+                    for (y=0;y<data.outlat[2];y++)
                     {
-                        for (y=0;y<outlat[2];y++)
+                        for (z=0;z<data.outlat[3];z++)
                         {
-                            for (z=0;z<outlat[3];z++)
+                            index=ipcorr*N0*N1*N2*N3
+                                    +(source[3]+z)%(N3)
+                                    +((source[2]+y)%(N2))*N3
+                                    +((source[1]+x)%(N1))*N2*N3
+                                    +((source[0]+t)%(N0))*N1*N2*N3;
+                            data_pt.re=(double)index;
+                            data_pt.im=-(double)index;
+                            if (endian==BIG_ENDIAN)
                             {
-                                index=(start_coords[3]+z)%(NPROC3*L3)
-                                        +((start_coords[2]+y)%(NPROC2*L2))*NPROC3*L3
-                                        +((start_coords[1]+x)%(NPROC1*L1))*NPROC2*L2*NPROC3*L3
-                                        +((start_coords[0]+t)%(NPROC0*L0))*NPROC1*L1*NPROC2*L2*NPROC3*L3;
-                                data_pt.re=(double)index;
-                                if (endian==BIG_ENDIAN)
-                                {
-                                    bswap_double(2,&data_pt);
-                                }
-                                iw+=fwrite(&data_pt,sizeof(double),2,fcmp);
+                                bswap_double(2,&data_pt);
                             }
+                            iw+=fwrite(&data_pt,sizeof(double),2,fcmp);
                         }
                     }
                 }
-                error_root(iw!=2*data.size,1,"main [parallel_out_test.c]","Incorrect write count");
-                fclose(fcmp);
-
-                /* Read both files and compare */
-                err=0;
-                printf("reading both files and comparing...\n");
-                fflush(stdout);
-
-                ftest=fopen(test_file,"rb");
-                error_root(ftest==NULL,1,"main [parallel_out_test.c]",
-                            "Unable to open test file");
-                fcmp=fopen(cmp_file,"rb");
-                error_root(fcmp==NULL,1,"main [parallel_out_test.c]",
-                            "Unable to open comparison file");
-
-                cmp_result=0;
-                ir_test=fread(buf_test,1,num_bytes,ftest);
-                ir_cmp=fread(buf_cmp,1,num_bytes,fcmp);
-                fread(buf_test,1,1,ftest);
-                fread(buf_cmp,1,1,fcmp);
-
-                if ((ir_test==num_bytes)&&(ir_cmp==num_bytes)&&(feof(ftest))&&(feof(fcmp)))
-                {
-                    cmp_result=memcmp(buf_test,buf_cmp,num_bytes);
-                    if (cmp_result!=0)
-                        err=1;
-                }
-                else
-                {
-                    printf("Error: Files have unexpected sizes\n");
-                    printf("ir_test: %ld, ir_cmp: %ld\n",ir_test,ir_cmp);
-                    printf("feof(ftest): %d, feof(fcmp): %d\n",feof(ftest),feof(fcmp));
-                    err=1;
-                }
-
-                fclose(ftest);
-                fclose(fcmp);
-
-                if ((remove(test_file)!=0)||(remove(cmp_file)!=0))
-                {
-                    error_root(1,1,"main [parallel_out_test.c]",
-                                "Unable to remove test files");
-                }
-
-                if (err==0)
-                {
-                    printf("TEST PASSED\n\n\n");
-                    fflush(stdout);
-                }
-                else
-                {
-                    printf("TEST FAILED\n\n\n");
-                    fflush(stdout);
-                    err_sum++;
-                }
             }
         }
+        error_root(iw!=2*data.npcorr*size,1,"main [parallel_out_test.c]","Incorrect write count");
+        fclose(fcmp);
+
+        printf("...completed.\n\n");
+        fflush(stdout);
+
+        /* Read both files and compare */
+        err=0;
+        printf("Reading both files and comparing...\n");
+        fflush(stdout);
+
+        ftest=fopen(test_file,"rb");
+        error_root(ftest==NULL,1,"main [parallel_out_test.c]",
+                    "Unable to open test file");
+        fcmp=fopen(cmp_file,"rb");
+        error_root(fcmp==NULL,1,"main [parallel_out_test.c]",
+                    "Unable to open comparison file");
+
+        cmp_result=0;
+        ir_test=fread(buf_test,1,num_bytes,ftest);
+        ir_cmp=fread(buf_cmp,1,num_bytes,fcmp);
+        if (fread(buf_test,1,1,ftest) > 1) { /* satisfies compiler */ }
+        if (fread(buf_cmp,1,1,fcmp) > 1) { /* satisfies compiler */ }
+
+        if ((ir_test==num_bytes)&&(ir_cmp==num_bytes)&&(feof(ftest))&&(feof(fcmp)))
+        {
+            cmp_result=memcmp(buf_test,buf_cmp,num_bytes);
+            if (cmp_result!=0)
+                err=1;
+        }
+        else
+        {
+            printf("Error: Files have unexpected sizes\n");
+            printf("ir_test: %ld, ir_cmp: %ld\n",ir_test,ir_cmp);
+            printf("feof(ftest): %d, feof(fcmp): %d\n",feof(ftest),feof(fcmp));
+            err=1;
+        }
+
+        fclose(ftest);
+        fclose(fcmp);
+
+        if ((remove(test_file)!=0)||(remove(cmp_file)!=0))
+        {
+            error_root(1,1,"main [parallel_out_test.c]",
+                        "Unable to remove test files");
+        }
+        printf("...completed.\n\n\n");
+        fflush(stdout);
     }
 
     free(buf_test);
@@ -423,18 +371,18 @@ int main(int argc, char *argv[])
 
     if (my_rank==0)
     {
-        if (err_sum==0)
+        if (err==0)
         {
             printf("PARALLEL_OUT TEST COMPLETED SUCCESSFULLY\n");
         }
         else
         {
-            printf("PARALLEL_OUT TEST FAILED (%d/4 passed)\n",4-err_sum);
+            printf("PARALLEL_OUT TEST FAILED\n\n");
+            printf("COMPARE RESULT: %d\n", cmp_result);
         }
         fclose(flog);
     }
     
-    free_MPI_COMPLEX_DOUBLE();
     MPI_Finalize();
     exit(0);
 }

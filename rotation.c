@@ -28,9 +28,14 @@
 *
 * Computation of two-point meson correlators
 *
-* Syntax: rotation -i <input file>
+* COMPILATION:
+*   make rotation
 *
-* For usage instructions see the file README.rotation
+* USAGE:
+*   export OMP_NUM_THREADS=1
+*   mpirun -np <num_processes> ./rotation -i <input file>
+*
+* For usage instructions see the file README.rotation and the sample input file.
 *
 *******************************************************************************/
 
@@ -353,7 +358,11 @@ static void read_run_parms(void)
     MPI_Bcast(&cF,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
     MPI_Bcast(outlat,4,MPI_INT,0,MPI_COMM_WORLD);
     MPI_Bcast(&nsrcs,1,MPI_INT,0,MPI_COMM_WORLD);
-    set_corr_data_parms(outlat,npcorr);
+    data.npcorr=npcorr;
+    data.outlat[0]=outlat[0];
+    data.outlat[1]=outlat[1];
+    data.outlat[2]=outlat[2];
+    data.outlat[3]=outlat[3];
 
     kappas=malloc(nprop*sizeof(double));
     mus=malloc(nprop*sizeof(double));
@@ -1531,7 +1540,7 @@ static void point_correlators(void)
         shift_vec[1]=-srcs[4*isrc+1];
         shift_vec[2]=-srcs[4*isrc+2];
         shift_vec[3]=-srcs[4*isrc+3];
-        shift_corr(data.corr_tmp,shift_vec);
+        shift_corr_tmp(&data,shift_vec);
 
         /* Add data.corr_tmp to data.corr */
         add_tmp_to_corr();
@@ -1601,7 +1610,7 @@ int main(int argc,char *argv[])
 
     geometry();
     init_rng();
-    set_up_parallel_out();
+    setup_parallel_out(&data);
 
     wsize(&nws,&nwv,&nwvd);
     alloc_ws(nws);

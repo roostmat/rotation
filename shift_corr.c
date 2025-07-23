@@ -1,3 +1,24 @@
+/*******************************************************************************
+*
+* File shift_corr.c
+*
+* Copyright (C) 2024, 2025 Mattis Roost
+*
+* This software is distributed under the terms of the GNU General Public
+* License (GPL)
+*
+* Programs related to writing out correlation data.
+*
+*   void shift_corr_tmp(corr_data_t *data,int *shift_vec)
+*     Shifts the correlation data stored in data.corr_tmp by the specified
+*     shift vector shift_vec. The shift is applied globally, meaning that
+*     the data is shifted across all processes in the MPI communicator.
+*
+*   void cleanup_shift(void)
+*     Cleans up any resources allocated when first calling shift_corr_tmp.
+*
+*******************************************************************************/
+
 #define SHIFT
 
 #include <stdlib.h>
@@ -41,16 +62,21 @@ static void init_send_receive_structure(void)
     {
         receive_indices[i]=NULL;
         send_indices[i]=NULL;
+
         neighbor_long[i]=0;
+
         block_volume[i]=0;
+
         receive_bases[i*DIM]=0;
         receive_bases[i*DIM+1]=0;
         receive_bases[i*DIM+2]=0;
         receive_bases[i*DIM+3]=0;
+
         send_bases[i*DIM]=0;
         send_bases[i*DIM+1]=0;
         send_bases[i*DIM+2]=0;
         send_bases[i*DIM+3]=0;
+
         receive_types[i]=MPI_DATATYPE_NULL;
         send_types[i]=MPI_DATATYPE_NULL;
     }
@@ -58,13 +84,13 @@ static void init_send_receive_structure(void)
 
 
 
-static void setup_shift(void)
+static void setup_shift(corr_data_t *data)
 {
     int err_count=0;
 
     if (!setup)
     {
-        npcorr=get_npcorr();
+        npcorr=data->npcorr;
         create_MPI_COMPLEX_DOUBLE(&MPI_COMPLEX_DOUBLE);
 
         err_count=MPI_Comm_rank(MPI_COMM_WORLD,&my_rank);
@@ -300,12 +326,12 @@ void cleanup_shift(void)
 
 
 
-void shift_corr(complex_dble *corr,int *shift_vec)
+void shift_corr_tmp(corr_data_t *data,int *shift_vec)
 {
-    setup_shift();
+    setup_shift(data);
 
     /* Create copy of current state of corr */
-    memcpy(corr_copy,corr,npcorr*VOLUME*sizeof(complex_dble));
+    memcpy(corr_copy,data->corr_tmp,npcorr*VOLUME*sizeof(complex_dble));
 
     /* Check if send/receive structure is already set up */
     if ((shift[0]!=shift_vec[0])||(shift[1]!=shift_vec[1])||
@@ -324,12 +350,12 @@ void shift_corr(complex_dble *corr,int *shift_vec)
         (shift_vec[2]!=0)||(shift_vec[3]!=0))
     {
         /* Perform the shift */
-        shift_data(corr);
+        shift_data(data->corr_tmp);
     }
 }
 
 
-
+/*
 static void average_2points(complex_dble *corr,int coords1[DIM],int coords2[DIM])
 {
     int ipcorr,index1,index2,rank1,rank2;
@@ -344,7 +370,7 @@ static void average_2points(complex_dble *corr,int coords1[DIM],int coords2[DIM]
     {
         for (ipcorr=0;ipcorr<npcorr;ipcorr++)
         {
-            /* Both points are on the same process */
+            Both points are on the same process
             corr[ipcorr*VOLUME+index1].re=0.5*(corr[ipcorr*VOLUME+index1].re+corr[ipcorr*VOLUME+index2].re);
             corr[ipcorr*VOLUME+index1].im=0.5*(corr[ipcorr*VOLUME+index1].im+corr[ipcorr*VOLUME+index2].im);
             corr[ipcorr*VOLUME+index2].re=corr[ipcorr*VOLUME+index1].re;
@@ -420,12 +446,12 @@ void average_equiv(complex_dble *corr,int outlat[4],int bc)
             ((coords2[0]<outlat[0])&&(coords2[1]<outlat[1])&&
             (coords2[2]<outlat[2])&&(coords2[3]<outlat[3]))))
         {
-            /* Average the two points */
+            Average the two points
             average_2points(corr,coords1,coords2);
         }
     }
 }
-
+*/
 
 
 /*************************************************************
@@ -434,6 +460,7 @@ void average_equiv(complex_dble *corr,int outlat[4],int bc)
  * C(x)=C(-x) for all x. It assumes that the source is located
  * at the origin (0,0,0,0).
  *************************************************************/
+/*
 void average_equiv2(complex_dble *corr)
 {
     int i,j,ipcorr;
@@ -456,21 +483,21 @@ void average_equiv2(complex_dble *corr)
     error(err_count!=MPI_SUCCESS,err_count,"setup_shift [shift_corr.c]",
             "Failed to get rank of current process");
 
-    /* Get boundary conditions */
+    * Get boundary conditions *
     bc=bc_type();
 
-    /* Get number of correlators */
+    * Get number of correlators *
     npcorr=get_npcorr();
 
-    /* Initialize dest and partner array to -1 */
+    * Initialize dest and partner array to -1 *
     for (i=0;i<VOLUME;i++)
     {
         dest[i]=-1;
         partner[i]=-1;
     }
 
-    /* Initialize send_receive_ranks to 0 */
-    /* and rank_index to -1 */
+    * Initialize send_receive_ranks to 0 *
+    * and rank_index to -1 *
     for (i=0;i<NPROC;i++)
     {
         send_receive_rank[i]=0;
@@ -502,14 +529,14 @@ void average_equiv2(complex_dble *corr)
 
             if ((my_rank==partner_rank)&&(i!=partner_index))
             {
-                /* Partner point is on the same process */
+                * Partner point is on the same process *
                 dest[i]=my_rank;
                 dest[partner_index]=my_rank;
                 partner[i]=partner_index;
             }
             else if (my_rank!=partner_rank)
             {
-                /* Partner point is on a different process */
+                * Partner point is on a different process *
                 dest[i]=partner_rank;
                 partner[i]=partner_index;
                 send_receive_rank[partner_rank]++;
@@ -532,7 +559,7 @@ void average_equiv2(complex_dble *corr)
 
     if (nsend>0)
     {
-        /* Allocate buffers and index arrays */
+        * Allocate buffers and index arrays *
         send_buffer=malloc(nsend*sizeof(complex_dble*));
         error(send_buffer==NULL,1,"average_equiv2 [shift_corr.c]",
                 "Failed to allocate send_buffer array");
@@ -585,9 +612,9 @@ void average_equiv2(complex_dble *corr)
                         "Failed to allocate sort_index[%d] array", i);
                 send_count[j]=0;
                 send_max[j]=send_receive_rank[i];
-                /* Store index of given rank */
+                * Store index of given rank *
                 rank_index[i]=j;
-                /* Convert dest_source_rank from lexicographical to ipr_global */
+                * Convert dest_source_rank from lexicographical to ipr_global *
                 dest_source_rank[j]=i;
                 j++;
             }
@@ -596,14 +623,14 @@ void average_equiv2(complex_dble *corr)
         error(j!=nsend,1,"average_equiv2 [shift_corr.c]",
                 "Number of send_receive_rank entries (%d) does not match nsend (%d)", j, nsend);
 
-        /* Fill send buffers or average locally */
+        * Fill send buffers or average locally *
         for (i=0;i<VOLUME;i++)
         {
             if (dest[i]!=-1)
             {
                 if ((dest[i]==my_rank)&&(i<partner[i]))
                 {
-                    /* Perform local averaging */
+                    * Perform local averaging *
                     for (ipcorr=0;ipcorr<npcorr;ipcorr++)
                     {
                         corr[ipcorr*VOLUME+i].re=0.5*(corr[ipcorr*VOLUME+i].re + corr[ipcorr*VOLUME+partner[i]].re);
@@ -614,7 +641,7 @@ void average_equiv2(complex_dble *corr)
                 }
                 else if (dest[i]!=my_rank)
                 {
-                    /* Fill send buffer */
+                    * Fill send buffer *
                     error(rank_index[dest[i]]==-1,1,"average_equiv2 [shift_corr.c]",
                             "Rank %d not found in rank_index array", dest[i]);
                     j=rank_index[dest[i]];
@@ -629,7 +656,7 @@ void average_equiv2(complex_dble *corr)
             }
         }
 
-        /* Check send counts */
+        * Check send counts *
         for (i=0;i<nsend;i++)
         {
             error(send_count[i]!=send_max[i],1,"average_equiv2 [shift_corr.c]",
@@ -637,7 +664,7 @@ void average_equiv2(complex_dble *corr)
                     send_count[i],send_max[i]);
         }
 
-        /* Exchange data */
+        * Exchange data *
         MPI_Barrier(MPI_COMM_WORLD);
         for (i=0;i<nsend;i++)
         {
@@ -655,14 +682,14 @@ void average_equiv2(complex_dble *corr)
         error(err_count!=MPI_SUCCESS,1,"average_equiv2 [shift_corr.c]",
                 "Failed to wait for all send/receive operations during averaging points");
 
-        /* Average received data */
+        * Average received data *
         for (i=0;i<nsend;i++)
         {
-            /* Sort my index in the way remote_index would be sorted */
+            * Sort my index in the way remote_index would be sorted *
             get_sorted_indices(remote_index[i],sort_index[i],send_max[i]);
             sort_array_from_indices(my_index[i],sort_index[i],send_max[i]);
 
-            /* Take average with received data */
+            * Take average with received data *
             for (j=0;j<send_max[i];j++)
             {
                 for (ipcorr=0;ipcorr<npcorr;ipcorr++)
@@ -675,7 +702,7 @@ void average_equiv2(complex_dble *corr)
             }
         }
 
-        /* Cleanup */
+        * Cleanup *
         for (i=0;i<nsend;i++)
         {
             free(send_buffer[i]);
@@ -694,3 +721,4 @@ void average_equiv2(complex_dble *corr)
         free(requests);
     }
 }
+*/

@@ -29,8 +29,8 @@ npcorr       4                    # number of different correlators
 csw          1.0                  # Dirac operator options
 cF           1.0
 isw	     1
-outlat       1 12 12 12           # size of the lattice that will be printed out
-pos          0                    # positioning of source in outlat (0: edge, 1: center)
+outlat       80 24 24 24          # size of the lattice that will be printed out
+nsrcs        5                    # number of random point sources
 
 ################################### For every quark line a Propagator 
                                   # section, nprop in total
@@ -43,22 +43,18 @@ isp          0                    # solver id
 [Point correlator 0]
 iprop        0 0                  # quark lines
 type         G5 G5                # Dirac structures src snk
-x0           -1                   # source time slice (-1: random)
 
 [Point correlator 1]
 iprop        0 0                  # quark lines
 type         G1 G1                # Dirac structures src snk
-x0           -1                   # source time slice (-1: random)
 
 [Point correlator 2]
 iprop        0 0                  # quark lines
 type         G2 G2                # Dirac structures src snk
-x0           -1                   # source time slice (-1: random)
 
 [Point correlator 3]
 iprop        0 0                  # quark lines
 type         G3 G3                # Dirac structures src snk
-x0           -1                   # source time slice (-1: random)
 
 ################################### For every solver id used, one Solver
                                   # section, as in openQCD 
