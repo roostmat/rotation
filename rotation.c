@@ -721,93 +721,76 @@ static void wsize(int *nws,int *nwv,int *nwvd)
 
 }
 
+
+static void generate_random_src(int *src,int bcon)
+{
+    double rand[4];
+    ranlxd(rand,4);
+
+    if (bcon==0)
+    {
+        src[0]=(int)((rand[0]+1)*N0/3); /* time slice chosen from the center third */
+        
+    }
+    else if (bcon==3)
+    {
+        src[0]=(int)(rand[0]*N0); /* time slice chosen from the whole range */
+    }
+    else
+    {
+        error_root(1,1,"generate_random_src [rotation.c]",
+                    "Unknown or unsupported boundary condition");
+    }
+
+    src[1]=(int)(rand[1]*N1);
+    src[2]=(int)(rand[2]*N2);
+    src[3]=(int)(rand[3]*N3);
+}
+
+
 /*******************************************************************************
  * 
  *   void set_srcs(void)
  *      Randomly sets the nsrcs unique source positions. If the boundary
- *      condition is bcon=0, the source time slice is set to N0/2.
+ *      condition is bcon=0, the source time slices are chosen between 
+ *      N0/3 and 2*N0/3 to stay away from the boundaries.
  *
  ******************************************************************************/
-void set_srcs(void)
+static void set_srcs(void)
 {
-    int err_count=0,i,j;
-    double rand[4];
-    int is_unique,attempt,max_attempts=1000;
+    const int max_attempts=1000;
+    int i,j,attempt,is_unique,err_count=0;
 
     if (my_rank==0)
     {
-        if (bcon==0)
+        for (i=0;i<nsrcs;i++)
         {
-            for (i=0;i<nsrcs;i++)
+            attempt=0;
+            is_unique=0;
+            while (!is_unique)
             {
-                is_unique=0;
-                attempt=0;
-                while (!is_unique)
-                {
-                    attempt++;
-                    error_root(attempt>max_attempts,1,
-                            "set_srcs [rotation.c]",
-                            "Too many attempts to find unique source coordinates");
+                attempt++;
+                error_root(attempt>max_attempts,1,
+                        "set_srcs [rotation.c]",
+                        "Too many attempts to find unique source coordinates");
 
-                    ranlxd(rand,4);
-                    srcs[4*i+0]=N0/2;
-                    srcs[4*i+1]=(int)(rand[1]*N1);
-                    srcs[4*i+2]=(int)(rand[2]*N2);
-                    srcs[4*i+3]=(int)(rand[3]*N3);
-                    
-                    is_unique=1;
-                    for (j=0;j<i;j++)
+                generate_random_src(&srcs[4*i],bcon);
+                
+                is_unique=1;
+                for (j=0;j<i;j++)
+                {
+                    if ((srcs[4*i+0]==srcs[4*j+0])&&
+                        (srcs[4*i+1]==srcs[4*j+1])&&
+                        (srcs[4*i+2]==srcs[4*j+2])&&
+                        (srcs[4*i+3]==srcs[4*j+3]))
                     {
-                        if ((srcs[4*i+1]==srcs[4*j+1])&&
-                            (srcs[4*i+2]==srcs[4*j+2])&&
-                            (srcs[4*i+3]==srcs[4*j+3]))
-                        {
-                            is_unique=0;
-                            break;
-                        }
+                        is_unique=0;
+                        break;
                     }
                 }
             }
         }
-        else if (bcon==3)
-        {
-            for (i=0;i<nsrcs;i++)
-            {
-                is_unique=0;
-                attempt=0;
-                while (!is_unique)
-                {
-                    attempt++;
-                    error_root(attempt>max_attempts,1,
-                            "set_srcs [rotation.c]",
-                            "Too many attempts to find unique source coordinates");
 
-                    ranlxd(rand,4);
-                    srcs[4*i+0]=(int)(rand[0]*N0);
-                    srcs[4*i+1]=(int)(rand[1]*N1);
-                    srcs[4*i+2]=(int)(rand[2]*N2);
-                    srcs[4*i+3]=(int)(rand[3]*N3);
-                    
-                    is_unique=1;
-                    for (j=0;j<i;j++)
-                    {
-                        if ((srcs[4*i+0]==srcs[4*j+0])&&
-                            (srcs[4*i+1]==srcs[4*j+1])&&
-                            (srcs[4*i+2]==srcs[4*j+2])&&
-                            (srcs[4*i+3]==srcs[4*j+3]))
-                        {
-                            is_unique=0;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        else
-        {
-            error_root(1,1,"source_pos [parallel_out.c]",
-                        "Unknown or unsupported boundary condition");
-        }
     }
     err_count=MPI_Bcast(srcs,4*nsrcs,MPI_INT,0,MPI_COMM_WORLD);
     error(err_count!=MPI_SUCCESS,1,"set_srcs [rotation.c]",
